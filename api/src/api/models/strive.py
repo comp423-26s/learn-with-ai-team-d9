@@ -7,38 +7,35 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class QuizCreateRequest(BaseModel):
-    """Request body for creating/starting a Strive quiz (MVP).
-
-    Explicit fields make the API clear for the frontend.
+    """
+    Request body for creating/starting a Strive quiz.
+    This is explicit so the frontend knows exactly what it can send.
     """
 
     mode: Literal["daily", "module"] = Field(
         ...,
-        description=(
-            "Type of quiz to generate. 'daily' creates a daily practice quiz, "
-            "while 'module' targets a specific module."
-        ),
-        example="daily",
+        description="Type of quiz to generate. 'daily' creates a daily practice quiz, while 'module' creates a quiz focused on a selected unit or module.",
+        examples=["daily", "module"],
     )
 
     module_name: Optional[str] = Field(
         default=None,
-        description="Optional module name for module-mode quizzes.",
-        example="Module 2: Python Basics",
+        description="Optional module or unit name to target when generating a quiz. Usually used for module-specific practice.",
+        examples=["Module 2: Python Basics", "Unit 4: Functions and Loops"],
     )
 
     topic: Optional[str] = Field(
         default=None,
-        description="Optional finer-grained topic to focus on (e.g. 'Loops').",
-        example="Loops",
+        description="Optional topic the student wants to practice directly.",
+        examples=["Loops", "Lists", "Conditionals"],
     )
 
     question_count: int = Field(
         default=5,
         description="Number of questions to generate for this quiz attempt.",
-        example=5,
+        examples=[5],
         ge=1,
-        le=20,
+        le=10,
     )
 
     model_config = ConfigDict(from_attributes=True)
