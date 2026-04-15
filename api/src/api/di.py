@@ -328,6 +328,7 @@ def submission_repository_factory(session: SessionDI) -> SubmissionRepository:
 SubmissionRepositoryDI: TypeAlias = Annotated[SubmissionRepository, Depends(submission_repository_factory)]
 
 
+
 def iyow_activity_repository_factory(session: SessionDI) -> IyowActivityRepository:
     """Constructs an IYOW activity repository bound to the current request session."""
     return IyowActivityRepository(session)

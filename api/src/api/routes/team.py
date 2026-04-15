@@ -6,9 +6,8 @@ their own routes and Pydantic models. The route below is intentionally
 small and documented so it appears in OpenAPI /docs immediately.
 """
 
-from pydantic import BaseModel
 from fastapi import APIRouter
-
+from pydantic import BaseModel
 
 router = APIRouter(tags=["Team"])
 
@@ -16,7 +15,6 @@ router = APIRouter(tags=["Team"])
 class TeamTestResponse(BaseModel):
     message: str
     team: str
-
 
 @router.get(
     "/team/test",
