@@ -10,6 +10,7 @@ from api.routes.health import router as health_router
 from api.routes.joke_generation import router as joke_generation_router
 from api.routes.me import router as me_router
 from api.routes.roster_uploads import router as roster_uploads_router
+from api.routes.team import router as team_router
 
 API_ROUTERS = (
     health_router,
@@ -19,6 +20,7 @@ API_ROUTERS = (
     activities_router,
     roster_uploads_router,
     joke_generation_router,
+    team_router,
 )
 
 __all__ = ["API_ROUTERS"]
