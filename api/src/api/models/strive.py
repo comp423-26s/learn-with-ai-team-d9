@@ -2,63 +2,64 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import List, Literal, Optional
-from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class QuizCreateRequest(BaseModel):
-    """
-    Request body for creating/starting a Strive quiz.
-    This is explicit so the frontend knows exactly what it can send.
+    """Request body for creating/starting a Strive quiz (MVP).
+
+    Explicit fields make the API clear for the frontend.
     """
 
     mode: Literal["daily", "module"] = Field(
         ...,
-        description="Type of quiz to generate. 'daily' creates a daily practice quiz, while 'module' creates a quiz focused on a selected unit or module.",
-        examples=["daily", "module"],
+        description=(
+            "Type of quiz to generate. 'daily' creates a daily practice quiz, "
+            "while 'module' targets a specific module."
+        ),
+        example="daily",
     )
 
     module_name: Optional[str] = Field(
         default=None,
-        description="Optional module or unit name to target when generating a quiz. Usually used for module-specific practice.",
-        examples=["Module 2: Python Basics", "Unit 4: Functions and Loops"],
+        description="Optional module name for module-mode quizzes.",
+        example="Module 2: Python Basics",
     )
 
     topic: Optional[str] = Field(
         default=None,
-        description="Optional topic the student wants to practice directly.",
-        examples=["Loops", "Lists", "Conditionals"],
+        description="Optional finer-grained topic to focus on (e.g. 'Loops').",
+        example="Loops",
     )
 
     question_count: int = Field(
         default=5,
         description="Number of questions to generate for this quiz attempt.",
-        examples=[5],
+        example=5,
         ge=1,
-        le=10,
+        le=20,
     )
 
     model_config = ConfigDict(from_attributes=True)
 
-class QuizSubmissionResponse(BaseModel):
-    """
-    Response returned immediately when a quiz is created/started.
-    """
-    id: UUID = Field(
-        default_factory=uuid4,
-        description="Unique id for this quiz submission (quiz_submission_id).",
-        example="3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    )
-    activity_id: UUID = Field(
+class QuizCreateResponse(BaseModel):
+    """Response returned immediately when a quiz is created/started."""
+
+    id: int = Field(
         ...,
-        description="The activity this quiz is associated with.",
-        example="9a7b1c2d-3e4f-5678-90ab-cdef12345678",
+        description="Numeric id for this quiz submission (matches existing Submission.id conventions).",
+        example=101,
     )
-    student_id: UUID = Field(
+    activity_id: int = Field(
         ...,
-        description="The id of the student who started the quiz.",
-        example="b7a9f1e2-3c4d-5e6f-7a8b-9c0d1e2f3a4b",
+        description="The activity id this quiz is associated with (int path id).",
+        example=42,
+    )
+    student_pid: int = Field(
+        ...,
+        description="The student's pid (internal numeric identifier).",
+        example=730611076,
     )
     status: str = Field(
         default="in_progress",
@@ -75,6 +76,21 @@ class QuizSubmissionResponse(BaseModel):
         description="Number of questions included in this submission.",
         example=5,
     )
+    mode: Literal["daily", "module"] = Field(
+        ...,
+        description="The quiz generation mode used for this submission.",
+        example="daily",
+    )
+    module_name: Optional[str] = Field(
+        default=None,
+        description="Module name when mode='module'.",
+        example="Module 2: Python Basics",
+    )
+    topic: Optional[str] = Field(
+        default=None,
+        description="Topic focus for this submission.",
+        example="Loops",
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -83,15 +99,15 @@ class ChoiceDTO(BaseModel):
     """
     A single multiple-choice option for a question.
     """
-    id: UUID = Field(
-        default_factory=uuid4,
-        description="Unique id for this choice option.",
-        example="d290f1ee-6c54-4b01-90e6-d701748f0851",
+    id: int = Field(
+        ...,
+        description="Local numeric id for the choice option (frontend-friendly).",
+        example=2,
     )
     text: str = Field(
         ...,
         description="Display text for the choice option.",
-        example="Paris",
+        example="def",
     )
 
     model_config = ConfigDict(from_attributes=True)
@@ -101,10 +117,10 @@ class QuizQuestionDTO(BaseModel):
     """
     A question delivered to the frontend (no correct answer included).
     """
-    question_id: UUID = Field(
-        default_factory=uuid4,
-        description="Unique id for this question instance in the submission.",
-        example="7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    question_id: int = Field(
+        ...,
+        description="Local numeric id for this question instance within the submission.",
+        example=501,
     )
     text: str = Field(
         ...,
@@ -115,10 +131,10 @@ class QuizQuestionDTO(BaseModel):
         ...,
         description="Ordered list of possible choices for this question.",
         example=[
-            {"id": "1", "text": "func"},
-            {"id": "2", "text": "def"},
-            {"id": "3", "text": "function"},
-            {"id": "4", "text": "lambda"},
+            {"id": 1, "text": "func"},
+            {"id": 2, "text": "def"},
+            {"id": 3, "text": "function"},
+            {"id": 4, "text": "lambda"},
         ],
     )
 
@@ -130,25 +146,40 @@ class QuizQuestionsResponse(BaseModel):
     Response for retrieving a quiz submission's questions.
     (Do NOT include correct answers.)
     """
-    id: UUID = Field(
+    id: int = Field(
         ...,
-        description="Quiz submission id.",
-        example="3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        description="Quiz submission id (numeric).",
+        example=101,
     )
-    activity_id: UUID = Field(
+    activity_id: int = Field(
         ...,
-        description="Associated activity id.",
-        example="9a7b1c2d-3e4f-5678-90ab-cdef12345678",
+        description="Associated activity id (int path id).",
+        example=42,
     )
-    student_id: UUID = Field(
+    student_pid: int = Field(
         ...,
-        description="Student who owns this submission.",
-        example="b7a9f1e2-3c4d-5e6f-7a8b-9c0d1e2f3a4b",
+        description="Student pid who owns this submission.",
+        example=730611076,
     )
     status: str = Field(
         ...,
         description="Submission status: 'in_progress' or 'submitted'.",
         example="in_progress",
+    )
+    mode: Literal["daily", "module"] = Field(
+        ...,
+        description="Mode used when creating this quiz.",
+        example="daily",
+    )
+    module_name: Optional[str] = Field(
+        default=None,
+        description="Module name when mode='module'.",
+        example="Module 2: Python Basics",
+    )
+    topic: Optional[str] = Field(
+        default=None,
+        description="Focus topic for this submission.",
+        example="Functions",
     )
     questions: List[QuizQuestionDTO] = Field(
         ...,
@@ -162,15 +193,15 @@ class QuizAnswerDTO(BaseModel):
     """
     Single answer provided by the frontend when submitting a quiz.
     """
-    question_id: UUID = Field(
+    question_id: int = Field(
         ...,
         description="The `question_id` for which this answer applies.",
-        example="7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        example=501,
     )
-    selected_choice_id: UUID = Field(
+    selected_choice_id: int = Field(
         ...,
-        description="The id of the selected choice option.",
-        example="11111111-1111-1111-1111-111111111111",
+        description="The numeric id of the selected choice option.",
+        example=2,
     )
 
     model_config = ConfigDict(from_attributes=True)
@@ -184,10 +215,7 @@ class QuizSubmitRequest(BaseModel):
         ...,
         description="Answers provided by the student for the submission's questions.",
         example=[
-            {
-                "question_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-                "selected_choice_id": "11111111-1111-1111-1111-111111111111",
-            }
+            {"question_id": 501, "selected_choice_id": 2}
         ],
     )
 
@@ -198,25 +226,25 @@ class QuizFeedbackDTO(BaseModel):
     """
     Per-question feedback returned after grading.
     """
-    question_id: UUID = Field(
+    question_id: int = Field(
         ...,
         description="Question id this feedback refers to.",
-        example="7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        example=501,
     )
     correct: bool = Field(
         ...,
         description="Whether the student's selected answer was correct.",
         example=True,
     )
-    correct_choice_id: Optional[UUID] = Field(
+    correct_choice_id: Optional[int] = Field(
         default=None,
         description="The id of the correct choice (provided for feedback only).",
-        example="11111111-1111-1111-1111-111111111111",
+        example=2,
     )
     explanation: Optional[str] = Field(
         default=None,
         description="Optional short explanation for the correct answer.",
-        example="Paris is the capital and most populous city of France.",
+        example="The `def` keyword declares a function in Python.",
     )
 
     model_config = ConfigDict(from_attributes=True)
@@ -226,10 +254,10 @@ class QuizSubmitResponse(BaseModel):
     """
     Response after grading a quiz submission.
     """
-    id: UUID = Field(
+    id: int = Field(
         ...,
-        description="Quiz submission id which was graded.",
-        example="3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        description="Quiz submission id which was graded (numeric).",
+        example=101,
     )
     score: float = Field(
         ...,
