@@ -12,6 +12,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from learnwithai.activities.iyow.repository import IyowActivityRepository, IyowSubmissionRepository
 from learnwithai.activities.iyow.service import IyowActivityService
 from learnwithai.activities.iyow.submission_service import IyowSubmissionService
+from learnwithai.activities.strive.repository import (
+    StriveActivityRepository,
+    StriveSubmissionRepository,
+)
+from learnwithai.activities.strive.service import StriveService
 from learnwithai.config import Settings, get_settings
 from learnwithai.db import get_session
 from learnwithai.interfaces import JobQueue
@@ -51,6 +56,9 @@ __all__ = [
     "IyowActivityServiceDI",
     "IyowSubmissionRepositoryDI",
     "IyowSubmissionServiceDI",
+    "StriveActivityRepositoryDI",
+    "StriveSubmissionRepositoryDI",
+    "StriveServiceDI",
     "JokeGenerationServiceDI",
     "JokeRepositoryDI",
     "JobQueueDI",
@@ -77,6 +85,9 @@ __all__ = [
     "iyow_activity_service_factory",
     "iyow_submission_repository_factory",
     "iyow_submission_service_factory",
+    "strive_activity_repository_factory",
+    "strive_submission_repository_factory",
+    "strive_service_factory",
     "joke_generation_service_factory",
     "joke_repository_factory",
     "job_queue_factory",
@@ -343,6 +354,36 @@ def iyow_submission_repository_factory(session: SessionDI) -> IyowSubmissionRepo
 
 
 IyowSubmissionRepositoryDI: TypeAlias = Annotated[IyowSubmissionRepository, Depends(iyow_submission_repository_factory)]
+
+
+def strive_activity_repository_factory(session: SessionDI) -> StriveActivityRepository:
+    """Constructs a Strive activity repository bound to the current request session."""
+    return StriveActivityRepository(session)
+
+
+StriveActivityRepositoryDI: TypeAlias = Annotated[StriveActivityRepository, Depends(strive_activity_repository_factory)]
+
+
+def strive_submission_repository_factory(session: SessionDI) -> StriveSubmissionRepository:
+    """Constructs a Strive submission repository bound to the current request session."""
+    return StriveSubmissionRepository(session)
+
+
+StriveSubmissionRepositoryDI: TypeAlias = Annotated[StriveSubmissionRepository, Depends(strive_submission_repository_factory)]
+
+
+def strive_service_factory(
+    activity_repo: ActivityRepositoryDI,
+    strive_activity_repo: StriveActivityRepositoryDI,
+    submission_repo: SubmissionRepositoryDI,
+    strive_submission_repo: StriveSubmissionRepositoryDI,
+    membership_repo: MembershipRepositoryDI,
+) -> StriveService:
+    """Creates the Strive service for the current request."""
+    return StriveService(activity_repo, strive_activity_repo, submission_repo, strive_submission_repo, membership_repo)
+
+
+StriveServiceDI: TypeAlias = Annotated[StriveService, Depends(strive_service_factory)]
 
 
 def activity_service_factory(

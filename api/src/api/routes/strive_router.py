@@ -5,7 +5,7 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Body, Depends, HTTPException, Path
 from starlette.status import HTTP_201_CREATED
 
-from api.di import AuthenticatedUserDI
+from api.di import AuthenticatedUserDI, StriveServiceDI
 from api.models.strive import (
     QuizCreateRequest,
     QuizCreateResponse,
@@ -16,11 +16,7 @@ from api.models.strive import (
 
 router = APIRouter(tags=["Strive"])
 
-# NOTE:
-# The Strive service factory is not yet wired in di.py.
-# Replace Depends(lambda: None) with Depends(strive_service_factory)
-# once the core service and DI factory are implemented.
-UnwiredStriveService = Annotated[Optional[object], Depends(lambda: None)]
+# The router now uses the `StriveService` DI factory from `api.di`.
 
 
 @router.post(
@@ -77,7 +73,7 @@ def start_quiz(
         ),
     ],
     subject: AuthenticatedUserDI = Depends(),
-    strive_svc: UnwiredStriveService = Depends(),
+    strive_svc: StriveServiceDI = Depends(),
 ) -> QuizCreateResponse:
     """
     Start a new quiz submission.
@@ -120,7 +116,7 @@ def get_quiz(
         ),
     ],
     subject: AuthenticatedUserDI = Depends(),
-    strive_svc: UnwiredStriveService = Depends(),
+    strive_svc: StriveServiceDI = Depends(),
 ) -> QuizQuestionsResponse:
     """
     Return the questions for a quiz submission.
@@ -171,7 +167,7 @@ def submit_quiz(
         ),
     ],
     subject: AuthenticatedUserDI = Depends(),
-    strive_svc: UnwiredStriveService = Depends(),
+    strive_svc: StriveServiceDI = Depends(),
 ) -> QuizSubmitResponse:
     """
     Grade the provided answers and return score plus feedback.
