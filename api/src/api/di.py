@@ -36,6 +36,8 @@ from learnwithai.tools.jokes.repository import JokeRepository
 from learnwithai.tools.jokes.service import JokeGenerationService
 from learnwithai_jobqueue.dramatiq_job_queue import DramatiqJobQueue
 from sqlmodel import Session
+from learnwithai.repositories.strive_repository import StriveRepository
+from learnwithai.services.strive_service import StriveService
 
 __all__ = [
     "ActivityByPathDI",
@@ -77,6 +79,10 @@ __all__ = [
     "iyow_activity_service_factory",
     "iyow_submission_repository_factory",
     "iyow_submission_service_factory",
+    "StriveRepositoryDI",
+    "strive_repository_factory",
+    "strive_service_factory",
+    "StriveServiceDI",
     "joke_generation_service_factory",
     "joke_repository_factory",
     "job_queue_factory",
@@ -326,6 +332,22 @@ def submission_repository_factory(session: SessionDI) -> SubmissionRepository:
 
 
 SubmissionRepositoryDI: TypeAlias = Annotated[SubmissionRepository, Depends(submission_repository_factory)]
+
+
+def strive_repository_factory(session: SessionDI) -> StriveRepository:
+    """Constructs the Strive repository bound to the current request session."""
+    return StriveRepository(session)
+
+
+StriveRepositoryDI: TypeAlias = Annotated[StriveRepository, Depends(strive_repository_factory)]
+
+
+def strive_service_factory(strive_repo: StriveRepositoryDI) -> StriveService:
+    """Creates the Strive service for the current request."""
+    return StriveService(strive_repo)
+
+
+StriveServiceDI: TypeAlias = Annotated[StriveService, Depends(strive_service_factory)]
 
 
 
