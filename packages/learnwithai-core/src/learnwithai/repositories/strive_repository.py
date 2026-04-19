@@ -1,15 +1,18 @@
 from __future__ import annotations
+
 from typing import List, Optional
 from uuid import UUID
 
-from sqlmodel import Session
-
 from learnwithai.repositories.base_repository import BaseRepository
-from learnwithai.tables.strive import QuizSubmission, QuizQuestion, QuizAnswer
+from learnwithai.tables.strive import QuizAnswer, QuizQuestion, QuizSubmission
 
 
 class StriveRepository(BaseRepository[QuizSubmission, UUID]):
     """Repository for quiz submissions and related objects."""
+
+    @property
+    def model_type(self) -> type[QuizSubmission]:
+        return QuizSubmission
 
     def create_submission(self, submission: QuizSubmission) -> QuizSubmission:
         return self.create(submission)
