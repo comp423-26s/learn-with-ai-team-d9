@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from api.models.strive import (
     ChoiceDTO,
@@ -23,7 +23,7 @@ def test_quiz_create_and_response_models_roundtrip():
         activity_id=42,
         student_pid=730611076,
         status="in_progress",
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc),
         question_count=3,
         mode="daily",
     )
@@ -56,6 +56,6 @@ def test_questions_and_submit_models_serialization():
         correct_count=1,
         total_count=1,
         feedback=[feedback],
-        finished_at=datetime.utcnow(),
+        finished_at=datetime.now(timezone.utc),
     )
     assert submit_resp.feedback[0].correct is True
