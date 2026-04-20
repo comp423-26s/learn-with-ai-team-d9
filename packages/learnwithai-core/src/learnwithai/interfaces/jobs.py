@@ -4,7 +4,7 @@
 """Contracts for serializable background jobs and their handlers."""
 
 from abc import ABC
-from typing import Protocol, TypeVar, runtime_checkable
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -57,6 +57,7 @@ class JobUpdate(BaseModel):
     user_id: int
     kind: str
     status: str
+    metadata: dict[str, Any] | None = None
 
 
 @runtime_checkable

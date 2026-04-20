@@ -16,6 +16,7 @@ from .tables.activity import Activity, ActivityType
 from .tables.async_job import AsyncJob, AsyncJobStatus
 from .tables.course import Course, Term
 from .tables.membership import Membership, MembershipState, MembershipType
+from .tables.strive import StriveActivity, StriveQuestionSet, StriveSubmission
 from .tables.submission import Submission
 from .tables.user import User
 from .tools.jokes.tables import Joke
@@ -197,4 +198,122 @@ def seed(session: Session) -> None:
         async_job_id=iyow_feedback_job.id,
     )
     session.add(iyow_submission_detail)
+    session.flush()
+
+    # --- Strive Activity ---
+    strive_activity_base = Activity(
+        course_id=course.id,
+        created_by_pid=instructor.pid,
+        type=ActivityType.STRIVE,
+        title="Daily Practice: Python Basics",
+        release_date=datetime(2025, 2, 1, 0, 0, tzinfo=timezone.utc),
+        due_date=datetime(2026, 12, 31, 23, 59, tzinfo=timezone.utc),
+        created_at=datetime(2025, 2, 1, 0, 0, tzinfo=timezone.utc),
+    )
+    session.add(strive_activity_base)
+    session.flush()
+    assert strive_activity_base.id is not None
+
+    strive_detail = StriveActivity(
+        activity_id=strive_activity_base.id,
+        mode="daily",
+        module_name="Module 2: Python Basics",
+        topic="Loops",
+        question_count=5,
+    )
+    session.add(strive_detail)
+    session.flush()
+
+    question_set = StriveQuestionSet(
+        strive_activity_id=strive_detail.id,  # type: ignore[arg-type]
+        questions=[
+            {
+                "question_id": 1,
+                "text": "Which keyword starts a loop?",
+                "choices": [
+                    {"id": 1, "text": "for"},
+                    {"id": 2, "text": "def"},
+                ],
+                "correct_choice_id": 1,
+            }
+        ],
+    )
+    session.add(question_set)
+    session.flush()
+
+    # Student submissions
+    student_submission_a = Submission(
+        activity_id=strive_activity_base.id,
+        student_pid=student.pid,
+        is_active=False,
+        submitted_at=datetime(2025, 2, 2, 9, 0, tzinfo=timezone.utc),
+        created_at=datetime(2025, 2, 2, 9, 0, tzinfo=timezone.utc),
+    )
+    session.add(student_submission_a)
+    session.flush()
+
+    student_strive_a = StriveSubmission(
+        submission_id=student_submission_a.id,  # type: ignore[arg-type]
+        question_set_id=question_set.id,  # type: ignore[arg-type]
+        student_pid=student.pid,
+        submitted_answers={"1": 1},
+        correct_count=4,
+        score=80.0,
+        feedback="Nice progress.",
+        status="submitted",
+        started_at=datetime(2025, 2, 2, 8, 50, tzinfo=timezone.utc),
+        completed_at=datetime(2025, 2, 2, 9, 0, tzinfo=timezone.utc),
+    )
+    session.add(student_strive_a)
+    session.flush()
+
+    student_submission_b = Submission(
+        activity_id=strive_activity_base.id,
+        student_pid=student.pid,
+        is_active=False,
+        submitted_at=datetime(2025, 2, 5, 9, 0, tzinfo=timezone.utc),
+        created_at=datetime(2025, 2, 5, 9, 0, tzinfo=timezone.utc),
+    )
+    session.add(student_submission_b)
+    session.flush()
+
+    student_strive_b = StriveSubmission(
+        submission_id=student_submission_b.id,  # type: ignore[arg-type]
+        question_set_id=question_set.id,  # type: ignore[arg-type]
+        student_pid=student.pid,
+        submitted_answers={"1": 1},
+        correct_count=5,
+        score=90.0,
+        feedback="Great work!",
+        status="submitted",
+        started_at=datetime(2025, 2, 5, 8, 50, tzinfo=timezone.utc),
+        completed_at=datetime(2025, 2, 5, 9, 0, tzinfo=timezone.utc),
+    )
+    session.add(student_strive_b)
+    session.flush()
+
+    # TA submission for leaderboard variety
+    ta_submission = Submission(
+        activity_id=strive_activity_base.id,
+        student_pid=ta.pid,
+        is_active=False,
+        submitted_at=datetime(2025, 2, 3, 9, 0, tzinfo=timezone.utc),
+        created_at=datetime(2025, 2, 3, 9, 0, tzinfo=timezone.utc),
+    )
+    session.add(ta_submission)
+    session.flush()
+
+    ta_strive = StriveSubmission(
+        submission_id=ta_submission.id,  # type: ignore[arg-type]
+        question_set_id=question_set.id,  # type: ignore[arg-type]
+        student_pid=ta.pid,
+        submitted_answers={"1": 1},
+        correct_count=5,
+        score=95.0,
+        feedback="Excellent consistency.",
+        status="submitted",
+        started_at=datetime(2025, 2, 3, 8, 50, tzinfo=timezone.utc),
+        completed_at=datetime(2025, 2, 3, 9, 0, tzinfo=timezone.utc),
+    )
+    session.add(ta_strive)
     session.flush()

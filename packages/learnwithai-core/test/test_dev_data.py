@@ -43,12 +43,20 @@ def test_seed_creates_three_users_one_course_and_three_memberships() -> None:
     # add_all called twice: once for users, once for memberships
     assert session.add_all.call_count == 2
     # add called: course, joke_job, joke_request, iyow_activity, iyow_detail,
-    #             iyow_feedback_job, iyow_submission, iyow_submission_detail
-    assert session.add.call_count == 8
+    #             iyow_feedback_job, iyow_submission, iyow_submission_detail,
+    #             strive_activity, strive_detail, question_set,
+    #             student_submission_a, student_strive_a,
+    #             student_submission_b, student_strive_b,
+    #             ta_submission, ta_strive
+    assert session.add.call_count == 17
     # flush called: users, course, memberships, joke_job, joke_request,
     #               iyow_activity, iyow_detail, iyow_feedback_job, iyow_submission,
-    #               iyow_submission_detail
-    assert session.flush.call_count == 10
+    #               iyow_submission_detail,
+    #               strive_activity, strive_detail, question_set,
+    #               student_submission_a, student_strive_a,
+    #               student_submission_b, student_strive_b,
+    #               ta_submission, ta_strive
+    assert session.flush.call_count == 19
 
     # Verify users
     users = added[0]
@@ -112,3 +120,8 @@ def test_seed_creates_three_users_one_course_and_three_memberships() -> None:
     iyow_sub_detail = added_single[7]
     assert isinstance(iyow_sub_detail, IyowSubmission)
     assert iyow_sub_detail.async_job_id == iyow_feedback_job.id
+
+    # Verify Strive activity
+    strive_activity = added_single[8]
+    assert isinstance(strive_activity, Activity)
+    assert "Daily Practice" in strive_activity.title

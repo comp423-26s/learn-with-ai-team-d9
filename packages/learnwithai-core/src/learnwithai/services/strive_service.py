@@ -5,8 +5,9 @@ from datetime import datetime, timezone
 from itertools import count
 from typing import Any, List
 
-from learnwithai.tables.activity import Activity
-from learnwithai.tables.user import User
+from ..repositories.strive_repository import StriveRepository
+from ..tables.activity import Activity
+from ..tables.user import User
 
 # Simple in-memory store for dev/testing so the endpoints work without DB migrations.
 _NEXT_ID = count(1)
@@ -34,9 +35,13 @@ class StriveService:
     suitable for production.
     """
 
-    def __init__(self, *_args: object, **_kwargs: object) -> None:
-        # Accept repository injection but do not require it for the dev shim
-        return None
+    def __init__(self, strive_repo: StriveRepository | None = None) -> None:
+        """Initialize the Strive service.
+
+        Args:
+            strive_repo: Repository used for persistent Strive data.
+        """
+        self._strive_repo = strive_repo
 
     def start_quiz(self, subject: User, activity: Activity, options: Any | None = None) -> _QuizHandle:
         """Create an in-memory quiz and return a lightweight handle.
@@ -75,7 +80,7 @@ class StriveService:
             "submission": {
                 "id": submission_id,
                 "activity_id": activity.id,
-                "course_id": activity.course_id,
+                "course_id": getattr(activity, "course_id", None),
                 "student_pid": subject.pid,
                 "status": "in_progress",
                 "started_at": started_at,
@@ -186,34 +191,30 @@ class StriveService:
         return int(submission["course_id"])
 
     def get_leaderboard(self, subject: User, course_id: int, limit: int = 10) -> dict[str, Any]:
-        leaderboard: dict[int, dict[str, Any]] = {}
         updated_at = datetime.now(timezone.utc)
+        if self._strive_repo is None:
+            return {
+                "course_id": course_id,
+                "updated_at": updated_at,
+                "entries": [],
+                "current_user": None,
+            }
 
-        for data in _QUIZ_STORE.values():
-            submission = data.get("submission")
-            results = data.get("results")
-            if submission is None or results is None:
-                continue
-
-            student_pid = int(submission.get("student_pid"))
-            score = float(results.get("score", 0.0))
-            correct_count = int(results.get("correct_count", 0))
-            total_count = int(results.get("total_count", 0))
-            accuracy = (correct_count / total_count) if total_count > 0 else 0.0
-
-            existing = leaderboard.get(student_pid)
-            if existing is None or score > existing["score"]:
-                leaderboard[student_pid] = {
-                    "user_pid": student_pid,
-                    "username": f"student-{student_pid}",
-                    "score": score,
-                    "accuracy": accuracy,
+        stats = self._strive_repo.get_leaderboard_stats(course_id)
+        ranked_entries: list[dict[str, Any]] = []
+        for index, entry in enumerate(stats, start=1):
+            total_score = float(entry["total_score"])
+            attempt_count = int(entry["attempt_count"])
+            percentage = (total_score / (attempt_count * 100.0)) if attempt_count > 0 else 0.0
+            ranked_entries.append(
+                {
+                    "rank": index,
+                    "user_pid": entry["user_pid"],
+                    "username": entry["username"],
+                    "score": total_score,
+                    "accuracy": percentage,
                 }
-
-        entries = sorted(leaderboard.values(), key=lambda entry: entry["score"], reverse=True)
-        ranked_entries = []
-        for index, entry in enumerate(entries, start=1):
-            ranked_entries.append({"rank": index, **entry})
+            )
 
         limited_entries = ranked_entries[: max(limit, 0)]
         current_user = next((e for e in ranked_entries if e["user_pid"] == subject.pid), None)
@@ -224,3 +225,32 @@ class StriveService:
             "entries": limited_entries,
             "current_user": current_user,
         }
+
+    def get_leaderboard_rank_snapshot(self, subject: User, course_id: int) -> dict[str, Any] | None:
+        """Return the current user's leaderboard snapshot for a course.
+
+        Args:
+            subject: Authenticated user requesting the snapshot.
+            course_id: Course identifier for the leaderboard.
+
+        Returns:
+            A dict containing rank, score, accuracy, and attempt_count when available.
+        """
+        if self._strive_repo is None:
+            return None
+
+        stats = self._strive_repo.get_leaderboard_stats(course_id)
+        for index, entry in enumerate(stats, start=1):
+            if entry["user_pid"] != subject.pid:
+                continue
+            total_score = float(entry["total_score"])
+            attempt_count = int(entry["attempt_count"])
+            accuracy = (total_score / (attempt_count * 100.0)) if attempt_count > 0 else 0.0
+            return {
+                "rank": index,
+                "score": total_score,
+                "accuracy": accuracy,
+                "attempt_count": attempt_count,
+            }
+
+        return None
