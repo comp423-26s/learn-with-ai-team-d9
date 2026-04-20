@@ -14,6 +14,7 @@ class ActivityType(StrEnum):
     """Discriminator for activity types."""
 
     IYOW = "iyow"
+    STRIVE = "strive"
 
 
 class Activity(SQLModel, table=True):

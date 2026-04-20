@@ -30,7 +30,7 @@ import { JobUpdateService } from '../../../job-update.service';
 import { LayoutNavigationService } from '../../../layout/layout-navigation.service';
 import { RosterUploadResultDialog } from './roster-upload-result-dialog.component';
 
-const DEBOUNCE_MS = 300;
+const DEBOUNCE_MS = globalThis.__TEST_DEBOUNCE_MS__ ?? 300;
 const MIN_SEARCH_LENGTH = 3;
 
 /** Displays the roster for a course. */

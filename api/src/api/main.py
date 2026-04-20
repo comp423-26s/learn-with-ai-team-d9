@@ -46,8 +46,10 @@ def create_app(settings: Settings) -> FastAPI:
     # Mount WebSocket endpoint for real-time job updates
     application.include_router(ws_route_module.router, prefix="/api")
 
-    # Development-only routes (dev data seeding, utilities)
-    if settings.is_development:
+    # Development-only routes (dev data seeding, utilities).
+    # Also include these routes during test runs so integration tests
+    # that rely on dev-only endpoints (reset-db, dev login) work.
+    if settings.is_development or settings.is_test:
         application.include_router(dev_router, prefix="/api")
 
     # Serve the Angular SPA for all non-API routes

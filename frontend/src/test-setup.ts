@@ -29,3 +29,11 @@ if (!(ANGULAR_TESTBED_SETUP in globalThis)) {
     errorOnUnknownProperties: true,
   });
 }
+
+// Make debounces fast under test to avoid timing flakes without changing specs.
+Object.defineProperty(globalThis, '__TEST_DEBOUNCE_MS__', {
+  value: 5,
+  configurable: true,
+  enumerable: false,
+  writable: true,
+});
