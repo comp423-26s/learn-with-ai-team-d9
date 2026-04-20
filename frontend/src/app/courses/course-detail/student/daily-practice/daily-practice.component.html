@@ -1,0 +1,75 @@
+<!--
+  Copyright (c) 2026 Kris Jordan
+  SPDX-License-Identifier: MIT
+-->
+
+<section class="space-y-6" aria-label="Today's challenge quiz">
+  <mat-card appearance="outlined">
+    <mat-card-content class="space-y-2">
+      <p class="text-sm font-medium tracking-[0.08em] uppercase opacity-80">Today's Challenge</p>
+      <p class="text-base opacity-90">Answer one question at a time and use Next to continue.</p>
+      @if (usingMockData()) {
+        <p class="text-sm opacity-75" role="status">{{ message() }}</p>
+      }
+    </mat-card-content>
+  </mat-card>
+
+  @if (loading()) {
+    <mat-card appearance="outlined">
+      <mat-card-content>
+        <p class="text-base">Loading challenge questions...</p>
+      </mat-card-content>
+    </mat-card>
+  } @else if (complete()) {
+    <mat-card appearance="outlined">
+      <mat-card-content class="space-y-3">
+        <p class="text-lg font-semibold">Challenge complete</p>
+        <p class="text-sm opacity-80">
+          You answered {{ answeredCount() }} out of {{ totalQuestions() }} questions.
+        </p>
+        <button mat-flat-button color="primary" type="button" (click)="restart()">Try Again</button>
+      </mat-card-content>
+    </mat-card>
+  } @else if (currentQuestion(); as question) {
+    <mat-card appearance="outlined">
+      <mat-card-content class="space-y-4">
+        <p class="text-sm font-medium opacity-80">
+          Question {{ questionNumber() }} of {{ totalQuestions() }}
+        </p>
+        <p class="text-lg font-semibold">{{ question.text }}</p>
+
+        <mat-radio-group
+          class="grid gap-3"
+          [value]="selectedChoiceForCurrent()"
+          (change)="selectChoice(question.question_id, $event.value)"
+          aria-label="Multiple choice answers"
+        >
+          @for (choice of currentChoices(); track choice.id) {
+            <mat-radio-button class="rounded-md border p-3" [value]="choice.id">
+              {{ choice.text }}
+            </mat-radio-button>
+          }
+        </mat-radio-group>
+
+        @if (immediateFeedbackForCurrent()) {
+          <section class="rounded-md border p-3" aria-live="polite">
+            <p class="text-sm font-medium">Immediate Feedback</p>
+            <p class="text-sm opacity-90">{{ immediateFeedbackForCurrent() }}</p>
+          </section>
+        }
+
+        <div class="flex justify-end">
+          <button
+            mat-flat-button
+            color="primary"
+            type="button"
+            [disabled]="!hasAnsweredCurrent()"
+            (click)="onNext()"
+          >
+            {{ nextLabel() }}
+          </button>
+        </div>
+      </mat-card-content>
+    </mat-card>
+  }
+</section>

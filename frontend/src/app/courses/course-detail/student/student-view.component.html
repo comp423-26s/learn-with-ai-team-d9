@@ -1,0 +1,31 @@
+<!--
+  Copyright (c) 2026 Kris Jordan
+  SPDX-License-Identifier: MIT
+-->
+
+<section class="space-y-6" aria-label="Student dashboard">
+  <header class="space-y-2">
+    <p class="text-sm font-medium tracking-[0.08em] uppercase opacity-80">Daily Challenge</p>
+    <p class="max-w-3xl text-base opacity-90">
+      Build momentum every day with one short challenge. Your streak, rank, and average update as
+      daily practice results are recorded.
+    </p>
+    <a mat-flat-button color="primary" [routerLink]="['daily-practice']">
+      Try Today's Challenge!
+    </a>
+  </header>
+
+  <section class="grid gap-4 md:grid-cols-3" aria-label="Performance stats overview">
+    @for (stat of topLevelStats; track stat.label) {
+      <mat-card appearance="outlined">
+        <mat-card-content class="space-y-1">
+          <p class="text-sm font-medium opacity-75">{{ stat.label }}</p>
+          <p class="text-2xl font-semibold">{{ stat.value }}</p>
+          <p class="text-sm opacity-75">{{ stat.description }}</p>
+        </mat-card-content>
+      </mat-card>
+    }
+  </section>
+</section>
+
+<router-outlet />
