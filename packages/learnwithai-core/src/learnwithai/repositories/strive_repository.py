@@ -7,7 +7,7 @@ from learnwithai.repositories.base_repository import BaseRepository
 from learnwithai.tables.strive import QuizAnswer, QuizQuestion, QuizSubmission
 
 
-class StriveRepository(BaseRepository[QuizSubmission, UUID]):
+class StriveRepository(BaseRepository[QuizSubmission, int]):
     """Repository for quiz submissions and related objects."""
 
     @property
@@ -23,13 +23,13 @@ class StriveRepository(BaseRepository[QuizSubmission, UUID]):
 
     def add_questions(self, submission_id: UUID, questions: List[QuizQuestion]) -> None:
         for q in questions:
-            self.session.add(q)
-        self.session.flush()
+            self._session.add(q)
+        self._session.flush()
 
     def bulk_create_answers(self, answers: List[QuizAnswer]) -> None:
         for a in answers:
-            self.session.add(a)
-        self.session.flush()
+            self._session.add(a)
+        self._session.flush()
 
     def update_submission(self, submission: QuizSubmission) -> QuizSubmission:
         return self.update(submission)

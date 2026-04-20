@@ -33,7 +33,9 @@ def start_quiz(
         raise HTTPException(status_code=501, detail="StriveService not wired.")
     # Delegate to service (service is authoritative for persistence and generation)
     try:
-        return strive_svc.start_quiz(subject=subject, activity=activity, options=body)
+        return QuizCreateResponse.model_validate(
+            strive_svc.start_quiz(subject=subject, activity=activity, options=body)
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail="Strive activity not found")
 
@@ -51,7 +53,9 @@ def get_quiz(
     if strive_svc is None:
         raise HTTPException(status_code=501, detail="StriveService not wired.")
     try:
-        return strive_svc.get_quiz(subject=subject, submission_id=quiz_submission_id)
+        return QuizQuestionsResponse.model_validate(
+            strive_svc.get_quiz(subject=subject, submission_id=quiz_submission_id)
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail="Quiz submission not found")
 
@@ -70,6 +74,8 @@ def submit_quiz(
     if strive_svc is None:
         raise HTTPException(status_code=501, detail="StriveService not wired.")
     try:
-        return strive_svc.submit_quiz(subject=subject, submission_id=quiz_submission_id, answers=body.answers)
+        return QuizSubmitResponse.model_validate(
+            strive_svc.submit_quiz(subject=subject, submission_id=quiz_submission_id, answers=body.answers)
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail="Quiz submission not found")

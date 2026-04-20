@@ -16,7 +16,7 @@ _QUIZ_STORE: dict[int, dict[str, Any]] = {}
 @dataclass
 class _QuizHandle:
     id: int
-    activity_id: int
+    activity_id: int | None
     student_pid: int
     status: str
     started_at: datetime
@@ -61,13 +61,15 @@ class StriveService:
                 {"id": 3, "text": "Option C"},
                 {"id": 4, "text": "Option D"},
             ]
-            questions.append({
-                "question_id": i,
-                "text": f"Sample question {i}",
-                "choices": choices,
-                "correct_choice_id": 1,
-                "explanation": "Because it's the sample answer.",
-            })
+            questions.append(
+                {
+                    "question_id": i,
+                    "text": f"Sample question {i}",
+                    "choices": choices,
+                    "correct_choice_id": 1,
+                    "explanation": "Because it's the sample answer.",
+                }
+            )
 
         _QUIZ_STORE[submission_id] = {
             "submission": {
@@ -104,11 +106,13 @@ class StriveService:
         # strip correct answers from the questions when returning
         questions = []
         for q in data["questions"]:
-            questions.append({
-                "question_id": q["question_id"],
-                "text": q["text"],
-                "choices": q["choices"],
-            })
+            questions.append(
+                {
+                    "question_id": q["question_id"],
+                    "text": q["text"],
+                    "choices": q["choices"],
+                }
+            )
         resp = {**data["submission"], "questions": questions}
         return resp
 
@@ -133,12 +137,14 @@ class StriveService:
             correct = correct_map.get(qid) == selected
             if correct:
                 correct_count += 1
-            feedback.append({
-                "question_id": qid,
-                "correct": correct,
-                "correct_choice_id": correct_map.get(qid),
-                "explanation": "Because it's the sample answer.",
-            })
+            feedback.append(
+                {
+                    "question_id": qid,
+                    "correct": correct,
+                    "correct_choice_id": correct_map.get(qid),
+                    "explanation": "Because it's the sample answer.",
+                }
+            )
 
         total = len(questions)
         score = (correct_count / total) * 100.0 if total > 0 else 0.0

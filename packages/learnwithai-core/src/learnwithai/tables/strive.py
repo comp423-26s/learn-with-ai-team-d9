@@ -1,8 +1,7 @@
-"""Strive activity DB tables (SQLModel).
-"""
+"""Strive activity DB tables (SQLModel)."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -12,7 +11,7 @@ from sqlmodel import Field, SQLModel
 class StriveActivity(SQLModel, table=True):
     """Configuration for a Strive activity tied to an existing activity."""
 
-    __tablename__ = "strive_activity"
+    __tablename__: ClassVar[str] = "strive_activity"
 
     id: int | None = Field(
         default=None,
@@ -38,7 +37,7 @@ class StriveQuestionSet(SQLModel, table=True):
     stable question ids to allow submissions to refer to them.
     """
 
-    __tablename__ = "strive_question_set"
+    __tablename__: ClassVar[str] = "strive_question_set"
 
     id: int | None = Field(
         default=None,
@@ -64,7 +63,7 @@ class StriveSubmission(SQLModel, table=True):
     selected choice ids (and optional metadata).
     """
 
-    __tablename__ = "strive_submission"
+    __tablename__: ClassVar[str] = "strive_submission"
 
     id: int | None = Field(
         default=None,
@@ -97,7 +96,7 @@ class StriveSubmission(SQLModel, table=True):
 # and `QuizAnswer` symbols. Provide minimal table-backed models for those names
 # and alias `QuizSubmission` to the primary `StriveSubmission` table.
 class QuizQuestion(SQLModel, table=True):
-    __tablename__ = "quiz_question"
+    __tablename__: ClassVar[str] = "quiz_question"
 
     id: int | None = Field(
         default=None,
@@ -110,7 +109,7 @@ class QuizQuestion(SQLModel, table=True):
 
 
 class QuizAnswer(SQLModel, table=True):
-    __tablename__ = "quiz_answer"
+    __tablename__: ClassVar[str] = "quiz_answer"
 
     id: int | None = Field(
         default=None,
@@ -124,4 +123,3 @@ class QuizAnswer(SQLModel, table=True):
 
 
 QuizSubmission = StriveSubmission
-

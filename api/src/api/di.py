@@ -20,6 +20,7 @@ from learnwithai.repositories.activity_repository import ActivityRepository
 from learnwithai.repositories.async_job_repository import AsyncJobRepository
 from learnwithai.repositories.course_repository import CourseRepository
 from learnwithai.repositories.membership_repository import MembershipRepository
+from learnwithai.repositories.strive_repository import StriveRepository
 from learnwithai.repositories.submission_repository import SubmissionRepository
 from learnwithai.repositories.user_repository import UserRepository
 from learnwithai.services.activity_service import ActivityService
@@ -29,6 +30,7 @@ from learnwithai.services.csxl_auth_service import (
     CSXLAuthService,
 )
 from learnwithai.services.roster_upload_service import RosterUploadService
+from learnwithai.services.strive_service import StriveService
 from learnwithai.tables.activity import Activity
 from learnwithai.tables.course import Course
 from learnwithai.tables.user import User
@@ -36,8 +38,6 @@ from learnwithai.tools.jokes.repository import JokeRepository
 from learnwithai.tools.jokes.service import JokeGenerationService
 from learnwithai_jobqueue.dramatiq_job_queue import DramatiqJobQueue
 from sqlmodel import Session
-from learnwithai.repositories.strive_repository import StriveRepository
-from learnwithai.services.strive_service import StriveService
 
 __all__ = [
     "ActivityByPathDI",
@@ -350,7 +350,6 @@ def strive_service_factory(strive_repo: StriveRepositoryDI) -> StriveService:
 StriveServiceDI: TypeAlias = Annotated[StriveService, Depends(strive_service_factory)]
 
 
-
 def iyow_activity_repository_factory(session: SessionDI) -> IyowActivityRepository:
     """Constructs an IYOW activity repository bound to the current request session."""
     return IyowActivityRepository(session)
@@ -365,7 +364,6 @@ def iyow_submission_repository_factory(session: SessionDI) -> IyowSubmissionRepo
 
 
 IyowSubmissionRepositoryDI: TypeAlias = Annotated[IyowSubmissionRepository, Depends(iyow_submission_repository_factory)]
-
 
 
 def activity_service_factory(

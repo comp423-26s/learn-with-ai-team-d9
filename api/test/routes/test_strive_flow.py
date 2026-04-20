@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -62,7 +62,9 @@ def test_strive_end_to_end_flow(client) -> None:
     assert "questions" in data and isinstance(data["questions"], list)
 
     # Submit answers (choose first option for each question)
-    answers = [{"question_id": q["question_id"], "selected_choice_id": q["choices"][0]["id"]} for q in data["questions"]]
+    answers = [
+        {"question_id": q["question_id"], "selected_choice_id": q["choices"][0]["id"]} for q in data["questions"]
+    ]
     r = client.post(f"/api/quizzes/{quiz_id}/submit", json={"answers": answers}, headers=headers)
     assert r.status_code == 200
     result = r.json()

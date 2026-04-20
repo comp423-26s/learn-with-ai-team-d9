@@ -1,4 +1,3 @@
-
 """Team-specific test routes for initial onboarding.
 
 This module provides a minimal test route so each team can scaffold
@@ -15,6 +14,7 @@ router = APIRouter(tags=["Team"])
 class TeamTestResponse(BaseModel):
     message: str
     team: str
+
 
 @router.get(
     "/team/test",

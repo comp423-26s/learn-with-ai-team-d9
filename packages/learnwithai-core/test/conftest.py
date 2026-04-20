@@ -25,6 +25,8 @@ def clear_settings_cache() -> Iterator[None]:
 def session():
     """Provide a transactional session that rolls back after each test."""
     engine = create_engine(TEST_DB_URL)
+    # Ensure a clean database state for each test by recreating tables.
+    SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
         yield session

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import ClassVar, Optional
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, Text, func
 from sqlalchemy.types import JSON
@@ -9,23 +9,19 @@ from ...tables.submission import Submission
 
 
 class StriveActivity(SQLModel, table=True):
-    __tablename__: str = "strive_activity"
+    __tablename__: ClassVar[str] = "strive_activity"
 
     id: int | None = Field(default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True))
-    activity_id: int = Field(
-        sa_column=Column(Integer, ForeignKey("activity.id"), unique=True, nullable=False)
-    )
+    activity_id: int = Field(sa_column=Column(Integer, ForeignKey("activity.id"), unique=True, nullable=False))
     module_name: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     topic: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
 
 
 class StriveSubmission(SQLModel, table=True):
-    __tablename__: str = "strive_submission"
+    __tablename__: ClassVar[str] = "strive_submission"
 
     id: int | None = Field(default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True))
-    submission_id: int = Field(
-        sa_column=Column(Integer, ForeignKey("submission.id"), unique=True, nullable=False)
-    )
+    submission_id: int = Field(sa_column=Column(Integer, ForeignKey("submission.id"), unique=True, nullable=False))
     mode: str = Field(default="daily", sa_column=Column(Text, nullable=False))
     module_name: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     topic: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))

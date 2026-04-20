@@ -12,19 +12,19 @@ class QuizCreateRequest(BaseModel):
     mode: Literal["daily", "module"] = Field(
         ...,
         description="Quiz generation mode. 'daily' for a daily practice quiz, 'module' for a module-focused quiz.",
-        examples=["daily", "module"],
+        json_schema_extra={"examples": ["daily", "module"]},
     )
 
     module_name: Optional[str] = Field(
         default=None,
         description="Optional module name when `mode` is 'module'.",
-        examples=["Module 2: Python Basics"],
+        json_schema_extra={"examples": ["Module 2: Python Basics"]},
     )
 
     topic: Optional[str] = Field(
         default=None,
         description="Optional topic to focus the questions on.",
-        examples=["Loops", "Lists"],
+        json_schema_extra={"examples": ["Loops", "Lists"]},
     )
 
     question_count: int = Field(
@@ -45,10 +45,14 @@ class QuizCreateResponse(BaseModel):
     activity_id: int = Field(..., description="Associated activity id.", example=42)
     student_pid: int = Field(..., description="Owner student's pid.", example=730611076)
     status: str = Field(..., description="Submission status: 'in_progress' or 'submitted'.", example="in_progress")
-    started_at: datetime = Field(..., description="UTC timestamp when quiz was started.", example="2026-04-15T12:00:00Z")
+    started_at: datetime = Field(
+        ..., description="UTC timestamp when quiz was started.", example="2026-04-15T12:00:00Z"
+    )
     question_count: int = Field(..., description="Number of questions in the submission.", example=5)
     mode: Literal["daily", "module"] = Field(..., description="Generation mode used.", example="daily")
-    module_name: Optional[str] = Field(default=None, description="Module name when mode='module'.", example="Module 2: Python Basics")
+    module_name: Optional[str] = Field(
+        default=None, description="Module name when mode='module'.", example="Module 2: Python Basics"
+    )
     topic: Optional[str] = Field(default=None, description="Topic focus for this quiz.", example="Functions")
 
     model_config = ConfigDict(from_attributes=True)
@@ -67,7 +71,9 @@ class QuizQuestionDTO(BaseModel):
     """Question returned to the frontend (no correct answer)."""
 
     question_id: int = Field(..., description="Local question id within the submission.", example=1)
-    text: str = Field(..., description="Question text shown to the student.", example="Which keyword defines a function in Python?")
+    text: str = Field(
+        ..., description="Question text shown to the student.", example="Which keyword defines a function in Python?"
+    )
     choices: List[ChoiceDTO] = Field(..., description="Ordered list of choices.")
 
     model_config = ConfigDict(from_attributes=True)
@@ -81,7 +87,9 @@ class QuizQuestionsResponse(BaseModel):
     student_pid: int = Field(..., description="Owner student's pid.", example=730611076)
     status: str = Field(..., description="Submission status.", example="in_progress")
     mode: Literal["daily", "module"] = Field(..., description="Generation mode.", example="daily")
-    module_name: Optional[str] = Field(default=None, description="Module name when mode='module'.", example="Module 2: Python Basics")
+    module_name: Optional[str] = Field(
+        default=None, description="Module name when mode='module'.", example="Module 2: Python Basics"
+    )
     topic: Optional[str] = Field(default=None, description="Topic focus.", example="Functions")
     questions: List[QuizQuestionDTO] = Field(..., description="List of questions for the submission.")
 
@@ -100,7 +108,9 @@ class QuizAnswerDTO(BaseModel):
 class QuizSubmitRequest(BaseModel):
     """Request body for submitting quiz answers."""
 
-    answers: List[QuizAnswerDTO] = Field(..., description="List of answers for the submission.", example=[{"question_id": 1, "selected_choice_id": 2}])
+    answers: List[QuizAnswerDTO] = Field(
+        ..., description="List of answers for the submission.", example=[{"question_id": 1, "selected_choice_id": 2}]
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -111,7 +121,11 @@ class QuizFeedbackDTO(BaseModel):
     question_id: int = Field(..., description="Question id.", example=1)
     correct: bool = Field(..., description="Whether the submitted answer was correct.", example=True)
     correct_choice_id: Optional[int] = Field(default=None, description="The correct choice id.", example=2)
-    explanation: Optional[str] = Field(default=None, description="Short explanation for the correct answer.", example="The `def` keyword declares a function.")
+    explanation: Optional[str] = Field(
+        default=None,
+        description="Short explanation for the correct answer.",
+        example="The `def` keyword declares a function.",
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -124,6 +138,8 @@ class QuizSubmitResponse(BaseModel):
     correct_count: int = Field(..., description="Number of correct answers.", example=4)
     total_count: int = Field(..., description="Total number of questions.", example=5)
     feedback: List[QuizFeedbackDTO] = Field(..., description="Per-question feedback.")
-    finished_at: datetime = Field(..., description="UTC timestamp when grading completed.", example="2026-04-15T12:05:00Z")
+    finished_at: datetime = Field(
+        ..., description="UTC timestamp when grading completed.", example="2026-04-15T12:05:00Z"
+    )
 
     model_config = ConfigDict(from_attributes=True)
