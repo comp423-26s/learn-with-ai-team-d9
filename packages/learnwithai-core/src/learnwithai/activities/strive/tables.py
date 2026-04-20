@@ -9,7 +9,7 @@ from ...tables.submission import Submission
 
 
 class StriveActivity(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "strive_activity"
+    __tablename__: ClassVar[str] = "strive_activity"  # type: ignore[override]
 
     id: int | None = Field(default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True))
     activity_id: int = Field(sa_column=Column(Integer, ForeignKey("activity.id"), unique=True, nullable=False))
@@ -18,7 +18,7 @@ class StriveActivity(SQLModel, table=True):
 
 
 class StriveSubmission(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "strive_submission"
+    __tablename__: ClassVar[str] = "strive_submission"  # type: ignore[override]
 
     id: int | None = Field(default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True))
     submission_id: int = Field(sa_column=Column(Integer, ForeignKey("submission.id"), unique=True, nullable=False))

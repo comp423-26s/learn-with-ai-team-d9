@@ -1,9 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import List, Literal, Optional
+# ruff: noqa: I001
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, List, Literal, Optional
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field as _PydanticField
+
+# Some pydantic Field callsites use keyword combinations that the type stubs
+# flag as not matching overloads. Treat `Field` as `Any` here so the type
+# checker does not raise spurious overload errors for legitimate runtime use.
+Field: Any = _PydanticField
 
 
 class QuizCreateRequest(BaseModel):

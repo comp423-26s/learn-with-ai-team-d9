@@ -74,8 +74,10 @@ def submit_quiz(
     if strive_svc is None:
         raise HTTPException(status_code=501, detail="StriveService not wired.")
     try:
+        # Convert Pydantic DTOs to plain dicts for the in-memory service implementation
+        answers = [a.model_dump() for a in body.answers]
         return QuizSubmitResponse.model_validate(
-            strive_svc.submit_quiz(subject=subject, submission_id=quiz_submission_id, answers=body.answers)
+            strive_svc.submit_quiz(subject=subject, submission_id=quiz_submission_id, answers=answers)
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="Quiz submission not found")

@@ -11,7 +11,7 @@ from sqlmodel import Field, SQLModel
 class StriveActivity(SQLModel, table=True):
     """Configuration for a Strive activity tied to an existing activity."""
 
-    __tablename__: ClassVar[str] = "strive_activity"
+    __tablename__: ClassVar[str] = "strive_activity"  # type: ignore[override]
 
     id: int | None = Field(
         default=None,
@@ -37,7 +37,7 @@ class StriveQuestionSet(SQLModel, table=True):
     stable question ids to allow submissions to refer to them.
     """
 
-    __tablename__: ClassVar[str] = "strive_question_set"
+    __tablename__: ClassVar[str] = "strive_question_set"  # type: ignore[override]
 
     id: int | None = Field(
         default=None,
@@ -63,7 +63,7 @@ class StriveSubmission(SQLModel, table=True):
     selected choice ids (and optional metadata).
     """
 
-    __tablename__: ClassVar[str] = "strive_submission"
+    __tablename__: ClassVar[str] = "strive_submission"  # type: ignore[override]
 
     id: int | None = Field(
         default=None,
@@ -96,7 +96,7 @@ class StriveSubmission(SQLModel, table=True):
 # and `QuizAnswer` symbols. Provide minimal table-backed models for those names
 # and alias `QuizSubmission` to the primary `StriveSubmission` table.
 class QuizQuestion(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "quiz_question"
+    __tablename__: ClassVar[str] = "quiz_question"  # type: ignore[override]
 
     id: int | None = Field(
         default=None,
@@ -109,7 +109,7 @@ class QuizQuestion(SQLModel, table=True):
 
 
 class QuizAnswer(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "quiz_answer"
+    __tablename__: ClassVar[str] = "quiz_answer"  # type: ignore[override]
 
     id: int | None = Field(
         default=None,
