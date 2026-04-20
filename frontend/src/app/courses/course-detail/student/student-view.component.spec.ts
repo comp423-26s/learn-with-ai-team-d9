@@ -4,6 +4,7 @@
  */
 
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { StudentView } from './student-view.component';
 import { PageTitleService } from '../../../page-title.service';
 import { LayoutNavigationService } from '../../../layout/layout-navigation.service';
@@ -18,6 +19,7 @@ describe('StudentView', () => {
     TestBed.configureTestingModule({
       imports: [StudentView],
       providers: [
+        provideRouter([]),
         { provide: PageTitleService, useValue: mockPageTitle },
         { provide: LayoutNavigationService, useValue: mockLayoutNavigation },
       ],
@@ -27,6 +29,7 @@ describe('StudentView', () => {
     fixture.detectChanges();
     expect(mockLayoutNavigation.clearContext).toHaveBeenCalled();
     expect(mockPageTitle.setTitle).toHaveBeenCalledWith('Student Dashboard');
-    expect(fixture.nativeElement.textContent).toContain('Student Dashboard');
+    expect(fixture.nativeElement.textContent).toContain('Daily Challenge');
+    expect(fixture.nativeElement.textContent).toContain("Try Today's Challenge!");
   });
 });

@@ -125,6 +125,15 @@ export const routes: Routes = [
               import('./courses/course-detail/student/student-view.component').then(
                 (m) => m.StudentView,
               ),
+            children: [
+              {
+                path: 'daily-practice',
+                loadComponent: () =>
+                  import('./courses/course-detail/student/daily-practice/daily-practice.component').then(
+                    (m) => m.DailyPractice,
+                  ),
+              },
+            ],
           },
           { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
         ],
