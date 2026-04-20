@@ -150,3 +150,49 @@ class QuizSubmitResponse(BaseModel):
     )
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class QuizResultsResponse(BaseModel):
+    """Response for retrieving the final quiz results with summary feedback."""
+
+    id: int = Field(..., description="Quiz submission id.", example=101)
+    score: float = Field(..., description="Score as percentage (0-100).", example=80.0)
+    correct_count: int = Field(..., description="Number of correct answers.", example=4)
+    total_count: int = Field(..., description="Total number of questions.", example=5)
+    finished_at: datetime = Field(
+        ..., description="UTC timestamp when grading completed.", example="2026-04-15T12:05:00Z"
+    )
+    feedback_summary: Optional[str] = Field(
+        default=None,
+        description="AI-generated summary feedback for the submission.",
+        example="Strong grasp of loops; revisit list indexing.",
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LeaderboardEntry(BaseModel):
+    """Single leaderboard entry for daily practice results."""
+
+    rank: int = Field(..., description="Rank on the leaderboard.", example=1)
+    user_pid: int = Field(..., description="User pid for this entry.", example=730611076)
+    username: str = Field(..., description="Display name for the user.", example="student1")
+    score: float = Field(..., description="Score as percentage (0-100).", example=92.5)
+    accuracy: float = Field(..., description="Accuracy as a fraction (0-1).", example=0.925)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LeaderboardResponse(BaseModel):
+    """Response for retrieving the daily practice leaderboard."""
+
+    course_id: int = Field(..., description="Course id for the leaderboard.", example=42)
+    updated_at: datetime = Field(
+        ..., description="UTC timestamp when the leaderboard was last updated.", example="2026-04-15T12:05:00Z"
+    )
+    entries: List[LeaderboardEntry] = Field(..., description="Top leaderboard entries.")
+    current_user: Optional[LeaderboardEntry] = Field(
+        default=None, description="Current user entry, if they are ranked."
+    )
+
+    model_config = ConfigDict(from_attributes=True)

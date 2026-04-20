@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, HTTPException, Path
+from fastapi import APIRouter, Body, HTTPException, Path, Query
+from learnwithai.interfaces.jobs import JobUpdate
+from learnwithai_jobqueue.rabbitmq_job_notifier import RabbitMQJobNotifier
 from starlette.status import HTTP_201_CREATED
 
-from api.di import ActivityByPathDI, AuthenticatedUserDI, StriveServiceDI
+from api.di import ActivityByPathDI, AuthenticatedUserDI, SettingsDI, StriveServiceDI
 from api.models.strive import (
+    LeaderboardResponse,
     QuizCreateRequest,
     QuizCreateResponse,
     QuizQuestionsResponse,
+    QuizResultsResponse,
     QuizSubmitRequest,
     QuizSubmitResponse,
 )
@@ -70,14 +74,66 @@ def submit_quiz(
     body: Annotated[QuizSubmitRequest, Body(...)],
     subject: AuthenticatedUserDI,
     strive_svc: StriveServiceDI,
+    settings: SettingsDI,
 ) -> QuizSubmitResponse:
     if strive_svc is None:
         raise HTTPException(status_code=501, detail="StriveService not wired.")
     try:
         # Convert Pydantic DTOs to plain dicts for the in-memory service implementation
         answers = [a.model_dump() for a in body.answers]
-        return QuizSubmitResponse.model_validate(
+        response = QuizSubmitResponse.model_validate(
             strive_svc.submit_quiz(subject=subject, submission_id=quiz_submission_id, answers=answers)
         )
+        course_id = strive_svc.get_submission_course_id(subject=subject, submission_id=quiz_submission_id)
+        notifier = RabbitMQJobNotifier(settings.effective_rabbitmq_url)
+        notifier.notify(
+            JobUpdate(
+                job_id=quiz_submission_id,
+                course_id=course_id,
+                user_id=subject.pid,
+                kind="daily_practice_leaderboard",
+                status="updated",
+            )
+        )
+        notifier.close()
+        return response
     except KeyError:
         raise HTTPException(status_code=404, detail="Quiz submission not found")
+
+
+@router.get(
+    "/quizzes/{quiz_submission_id}/results",
+    response_model=QuizResultsResponse,
+    summary="Get final quiz results with summary feedback",
+)
+def get_quiz_results(
+    subject: AuthenticatedUserDI,
+    quiz_submission_id: Annotated[int, Path(...)],
+    strive_svc: StriveServiceDI,
+) -> QuizResultsResponse:
+    if strive_svc is None:
+        raise HTTPException(status_code=501, detail="StriveService not wired.")
+    try:
+        return QuizResultsResponse.model_validate(
+            strive_svc.get_results(subject=subject, submission_id=quiz_submission_id)
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Quiz results not found")
+
+
+@router.get(
+    "/daily-practice/leaderboard",
+    response_model=LeaderboardResponse,
+    summary="Get the daily practice leaderboard",
+)
+def get_leaderboard(
+    subject: AuthenticatedUserDI,
+    course_id: Annotated[int, Query(...)],
+    strive_svc: StriveServiceDI,
+    limit: int = Query(10, ge=1, le=100),
+) -> LeaderboardResponse:
+    if strive_svc is None:
+        raise HTTPException(status_code=501, detail="StriveService not wired.")
+    return LeaderboardResponse.model_validate(
+        strive_svc.get_leaderboard(subject=subject, course_id=course_id, limit=limit)
+    )

@@ -1,6 +1,7 @@
 from typing import Any
 
 from fastapi import HTTPException
+from learnwithai.config import Settings
 
 from api.models.strive import QuizCreateRequest, QuizSubmitRequest
 from api.routes.strive_router import get_quiz, start_quiz, submit_quiz
@@ -68,14 +69,26 @@ def test_get_and_submit_unwired_raise_501() -> None:
 
     body = QuizSubmitRequest.model_validate({"answers": []})
     try:
-        submit_quiz(quiz_submission_id=1, body=body, subject=subject, strive_svc=None)  # type: ignore[arg-type]
+        submit_quiz(
+            quiz_submission_id=1,
+            body=body,
+            subject=subject,
+            strive_svc=None,  # type: ignore[arg-type]
+            settings=Settings(),
+        )
         raise AssertionError("expected HTTPException")
     except HTTPException as e:
         assert e.status_code == 501
 
     body = QuizSubmitRequest.model_validate({"answers": []})
     try:
-        submit_quiz(quiz_submission_id=999, body=body, subject=subject, strive_svc=FailingService())  # type: ignore[arg-type]
+        submit_quiz(
+            quiz_submission_id=999,
+            body=body,
+            subject=subject,
+            strive_svc=FailingService(),  # type: ignore[arg-type]
+            settings=Settings(),
+        )
         raise AssertionError("expected HTTPException")
     except HTTPException as e:
         assert e.status_code == 404
