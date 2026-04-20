@@ -1,6 +1,8 @@
+// Shared test-only globals used by Vitest and unit tests.
+// Declare them here so TypeScript knows about `globalThis.__TEST_DEBOUNCE_MS__`.
+
 declare global {
-  // Test harness may set this to speed up debounce timers during tests.
-  var __TEST_DEBOUNCE_MS__: number | undefined;
+	var __TEST_DEBOUNCE_MS__: number | undefined;
 }
 
 export {};

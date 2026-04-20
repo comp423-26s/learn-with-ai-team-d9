@@ -27,7 +27,7 @@ import { ActivityService } from '../activity.service';
 import { buildActivityContextNav } from '../activity-nav';
 import { IyowActivity, StudentSubmissionRow } from '../../../../api/models';
 
-const DEBOUNCE_MS = globalThis.__TEST_DEBOUNCE_MS__ ?? 300;
+const DEBOUNCE_MS = 300;
 const MIN_SEARCH_LENGTH = 3;
 
 /** Instructor view showing activity info and a sortable table of student submissions. */
