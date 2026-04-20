@@ -26,6 +26,59 @@ class _QuizHandle:
     topic: str | None = None
 
 
+def grade_answers(questions: List[dict], answers: Any, mode: str | None = None) -> dict[str, Any]:
+    """Grade submitted answers against `questions`.
+
+    Simple, unweighted scoring: percent correct.
+
+    - `questions` is a list of dicts; each should include `question_id`
+      and `correct_choice_id`.
+    - `answers` is an iterable of dicts or objects with `question_id`
+      and `selected_choice_id`.
+    - `mode` is accepted for callers that need to distinguish
+      (e.g. 'daily' vs 'module') but does not affect scoring here.
+
+    Returns a dict with keys: `score`, `accuracy`, `correct_count`,
+    `total_count`, and `feedback` (list per question).
+    """
+    correct_map = {q["question_id"]: q.get("correct_choice_id") for q in questions}
+
+    feedback: List[dict] = []
+    correct_count = 0
+
+    for a in answers:
+        if isinstance(a, dict):
+            qid = int(a["question_id"])
+            selected = int(a["selected_choice_id"])
+        else:
+            qid = int(getattr(a, "question_id"))
+            selected = int(getattr(a, "selected_choice_id"))
+
+        correct = correct_map.get(qid) == selected
+        if correct:
+            correct_count += 1
+
+        feedback.append(
+            {
+                "question_id": qid,
+                "correct": correct,
+                "correct_choice_id": correct_map.get(qid),
+            }
+        )
+
+    total = len(questions)
+    score = (correct_count / total) * 100.0 if total > 0 else 0.0
+    accuracy = score
+
+    return {
+        "score": score,
+        "accuracy": accuracy,
+        "correct_count": correct_count,
+        "total_count": total,
+        "feedback": feedback,
+    }
+
+
 class StriveService:
     """Lightweight dev implementation of Strive flows (in-memory).
 
@@ -116,38 +169,20 @@ class StriveService:
         resp = {**data["submission"], "questions": questions}
         return resp
 
-    def submit_quiz(self, subject: User, submission_id: int, answers: List[dict]) -> dict[str, Any]:
+    def submit_quiz(self, subject: User, submission_id: int, answers: Any) -> dict[str, Any]:
         data = _QUIZ_STORE.get(int(submission_id))
         if data is None:
             raise KeyError("quiz not found")
-
         questions = data["questions"]
-        # build a map of correct answers
-        correct_map = {q["question_id"]: q["correct_choice_id"] for q in questions}
-        feedback = []
-        correct_count = 0
-        for a in answers:
-            if isinstance(a, dict):
-                qid = int(a["question_id"])
-                selected = int(a["selected_choice_id"])
-            else:
-                # Pydantic model objects may be passed; read attributes
-                qid = int(getattr(a, "question_id"))
-                selected = int(getattr(a, "selected_choice_id"))
-            correct = correct_map.get(qid) == selected
-            if correct:
-                correct_count += 1
-            feedback.append(
-                {
-                    "question_id": qid,
-                    "correct": correct,
-                    "correct_choice_id": correct_map.get(qid),
-                    "explanation": "Because it's the sample answer.",
-                }
-            )
+        mode = data["submission"].get("mode")
 
-        total = len(questions)
-        score = (correct_count / total) * 100.0 if total > 0 else 0.0
+        # Use grading helper
+        result = grade_answers(questions, answers, mode=mode)
+        score = result["score"]
+        accuracy = result["accuracy"]
+        correct_count = result["correct_count"]
+        total = result["total_count"]
+        feedback = result["feedback"]
         finished_at = datetime.now(timezone.utc)
 
         # update store
@@ -156,6 +191,7 @@ class StriveService:
         return {
             "id": submission_id,
             "score": score,
+            "accuracy": accuracy,
             "correct_count": correct_count,
             "total_count": total,
             "feedback": feedback,
