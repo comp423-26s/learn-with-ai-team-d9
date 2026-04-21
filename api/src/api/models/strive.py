@@ -177,8 +177,8 @@ class LeaderboardEntry(BaseModel):
     rank: int = Field(..., description="Rank on the leaderboard.", example=1)
     user_pid: int = Field(..., description="User pid for this entry.", example=730611076)
     username: str = Field(..., description="Display name for the user.", example="student1")
-    score: float = Field(..., description="Score as percentage (0-100).", example=92.5)
-    accuracy: float = Field(..., description="Accuracy as a fraction (0-1).", example=0.925)
+    score: float = Field(..., description="Total score across daily challenges (sum of percentages).", example=185.0)
+    accuracy: float = Field(..., description="Average percentage as a fraction (0-1).", example=0.925)
 
     model_config = ConfigDict(from_attributes=True)
 

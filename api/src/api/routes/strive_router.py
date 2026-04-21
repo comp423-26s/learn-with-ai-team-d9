@@ -85,6 +85,7 @@ def submit_quiz(
             strive_svc.submit_quiz(subject=subject, submission_id=quiz_submission_id, answers=answers)
         )
         course_id = strive_svc.get_submission_course_id(subject=subject, submission_id=quiz_submission_id)
+        rank_snapshot = strive_svc.get_leaderboard_rank_snapshot(subject=subject, course_id=course_id)
         notifier = RabbitMQJobNotifier(settings.effective_rabbitmq_url)
         notifier.notify(
             JobUpdate(
@@ -93,6 +94,7 @@ def submit_quiz(
                 user_id=subject.pid,
                 kind="daily_practice_leaderboard",
                 status="updated",
+                metadata=rank_snapshot,
             )
         )
         notifier.close()
