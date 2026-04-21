@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from itertools import count
 from typing import Any, List
 
+from learnwithai.config import Settings, get_settings
 from learnwithai.tables.activity import Activity
 from learnwithai.tables.user import User
 from openai import OpenAI
@@ -27,6 +27,31 @@ class _QuizHandle:
     mode: str | None = None
     module_name: str | None = None
     topic: str | None = None
+
+
+_MOCK_TOPIC_DB: dict[str, tuple[str, ...]] = {
+    "Python": (
+        "functions",
+        "lists and dictionaries",
+        "control flow",
+        "exceptions",
+        "file I/O",
+    ),
+    "Java": (
+        "classes and objects",
+        "interfaces",
+        "collections framework",
+        "exception handling",
+        "streams",
+    ),
+    "C": (
+        "pointers",
+        "memory allocation",
+        "structs",
+        "file handling",
+        "header files and compilation",
+    ),
+}
 
 
 def grade_answers(questions: List[dict], answers: Any, mode: str | None = None) -> dict[str, Any]:
@@ -61,11 +86,16 @@ def grade_answers(questions: List[dict], answers: Any, mode: str | None = None) 
         if correct:
             correct_count += 1
 
+        # Pull explanation from the question itself so LLM-generated feedback is preserved
+        question_match = next((q for q in questions if q["question_id"] == qid), None)
+        explanation = question_match.get("explanation") if question_match else None
+
         feedback.append(
             {
                 "question_id": qid,
                 "correct": correct,
                 "correct_choice_id": correct_map.get(qid),
+                "explanation": explanation,
             }
         )
 
@@ -83,135 +113,189 @@ def grade_answers(questions: List[dict], answers: Any, mode: str | None = None) 
 
 
 class StriveService:
-    """Lightweight dev implementation of Strive flows (in-memory)."""
+    """Lightweight dev implementation of Strive flows (in-memory).
 
-    def __init__(self, *_args: object, **_kwargs: object) -> None:
-        return None
+    This implementation exists solely to allow frontend/API GUI testing
+    without creating DB migrations. It is intentionally simple and not
+    suitable for production.
+    """
+
+    def __init__(self, *_args: object, settings: Settings | None = None, **_kwargs: object) -> None:
+        self.settings = settings or get_settings()
+        self.client = OpenAI(
+            api_key=self.settings.openai_api_key,
+            base_url=f"{self.settings.openai_endpoint.rstrip('/')}/openai/v1/",
+        )
+
+    def _select_language(self, module_name: str | None, topic: str | None) -> str:
+        context = " ".join(part for part in [module_name, topic] if part).lower()
+        if "java" in context:
+            return "Java"
+        if "c" in context or "pointer" in context or "memory" in context or "struct" in context:
+            return "C"
+        return "Python"
+
+    def _build_llm_prompt(self, topics: tuple[str, ...]) -> str:
+        """Build the fixed quiz-generation prompt with only the topic list swapped in."""
+
+        topic_list = ", ".join(topics)
+        return (
+            "Reference the list of topics and generate 5 mcq questions with 4 answer choices each. "
+            "Have each question come from one of the listed topics (topics go here) and have all at least one question "
+            "come from each topic so all the topics are being tested.\n"
+            f"Topics: {topic_list}\n"
+            "Keep each explanation brief (one sentence).\n"
+            "Return ONLY valid JSON as an array with this schema:\n"
+            "[\n"
+            "  {\n"
+            '    "question": "string",\n'
+            '    "choices": ["string", "string", "string", "string"],\n'
+            '    "correct_choice_index": 0,\n'
+            '    "explanation": "string"\n'
+            "  }\n"
+            "]"
+        )
+
+    def _generate_questions_with_llm(self, qcount: int, topics: tuple[str, ...]) -> List[dict]:
+        """Generate quiz questions with the LLM and normalize them into app format."""
+        prompt = self._build_llm_prompt(topics=topics)
+
+        response = self.client.chat.completions.create(
+            model=self.settings.openai_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful educational question generator that returns strict JSON only.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+        )
+
+        content = response.choices[0].message.content or ""
+
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Strive quiz generation returned non-JSON content.") from exc
+
+        if not isinstance(parsed, list) or len(parsed) < qcount:
+            raise ValueError("Strive quiz generation returned too few questions.")
+
+        questions: List[dict] = []
+
+        for i, item in enumerate(parsed[:qcount], start=1):
+            if not isinstance(item, dict):
+                raise ValueError("Strive quiz generation returned an invalid question payload.")
+
+            raw_choices = item.get("choices", [])
+            if not isinstance(raw_choices, list) or len(raw_choices) != 4:
+                raise ValueError("Strive quiz generation returned invalid choices.")
+
+            correct_choice_index = item.get("correct_choice_index", 0)
+            if not isinstance(correct_choice_index, int) or correct_choice_index not in range(4):
+                raise ValueError("Strive quiz generation returned an invalid correct choice index.")
+
+            choices = [{"id": idx + 1, "text": str(choice)} for idx, choice in enumerate(raw_choices)]
+
+            questions.append(
+                {
+                    "question_id": i,
+                    "text": str(item.get("question", f"Generated question {i}")),
+                    "choices": choices,
+                    "correct_choice_id": correct_choice_index + 1,
+                    "explanation": str(
+                        item.get(
+                            "explanation",
+                            (
+                                "Step 1: Identify the relevant concept. "
+                                "Step 2: Compare the options. "
+                                "Step 3: Choose the best-supported answer."
+                            ),
+                        )
+                    ),
+                }
+            )
+
+        return questions
+
+    def _find_reusable_submission(
+        self,
+        subject: User,
+        activity: Activity,
+        *,
+        qcount: int,
+        mode: str,
+        module_name: str | None,
+        topic: str | None,
+    ) -> dict[str, Any] | None:
+        """Find an existing quiz for this user/activity/options to avoid re-generating questions."""
+        candidates: list[dict[str, Any]] = []
+
+        for data in _QUIZ_STORE.values():
+            submission = data.get("submission", {})
+            if submission.get("student_pid") != subject.pid:
+                continue
+            if submission.get("activity_id") != activity.id:
+                continue
+            if submission.get("question_count") != qcount:
+                continue
+            if submission.get("mode") != mode:
+                continue
+            if submission.get("module_name") != module_name:
+                continue
+            if submission.get("topic") != topic:
+                continue
+            if submission.get("status") not in {"in_progress", "submitted"}:
+                continue
+
+            candidates.append(data)
+
+        if not candidates:
+            return None
+
+        # Reuse the most recent matching submission.
+        return max(candidates, key=lambda item: item["submission"]["started_at"])
 
     def start_quiz(self, subject: User, activity: Activity, options: Any | None = None) -> _QuizHandle:
+        """Create an in-memory quiz and return a lightweight handle.
+
+        `options` is expected to have attributes similar to the API request
+        (question_count, mode, module_name, topic).
+        """
         qcount = getattr(options, "question_count", 5) if options is not None else 5
         mode = getattr(options, "mode", "daily") if options is not None else "daily"
         module_name = getattr(options, "module_name", None) if options is not None else None
         topic = getattr(options, "topic", None) if options is not None else None
 
+        reusable = self._find_reusable_submission(
+            subject,
+            activity,
+            qcount=qcount,
+            mode=mode,
+            module_name=module_name,
+            topic=topic,
+        )
+        if reusable is not None:
+            existing = reusable["submission"]
+            return _QuizHandle(
+                id=existing["id"],
+                activity_id=existing["activity_id"],
+                student_pid=existing["student_pid"],
+                status=existing["status"],
+                started_at=existing["started_at"],
+                question_count=existing["question_count"],
+                mode=existing.get("mode"),
+                module_name=existing.get("module_name"),
+                topic=existing.get("topic"),
+            )
+
+        language = self._select_language(module_name=module_name, topic=topic)
+        topics = _MOCK_TOPIC_DB[language]
+
         submission_id = next(_NEXT_ID)
         started_at = datetime.now(timezone.utc)
 
-        questions: List[dict] = []
-
-        # ✅ Fallback for tests (no API key)
-        if not os.getenv("OPENAI_API_KEY"):
-            for i in range(1, qcount + 1):
-                choices = [
-                    {"id": 1, "text": "Option A"},
-                    {"id": 2, "text": "Option B"},
-                    {"id": 3, "text": "Option C"},
-                    {"id": 4, "text": "Option D"},
-                ]
-                questions.append(
-                    {
-                        "question_id": i,
-                        "text": f"Sample question {i}",
-                        "choices": choices,
-                        "correct_choice_id": 1,
-                        "explanation": "Because it's the sample answer.",
-                    }
-                )
-
-        # ✅ Use LLM if API key exists
-        else:
-            try:
-                client = OpenAI()
-
-                prompt = f"""You are an expert educator creating formative assessment questions.
-
-Generate exactly {qcount} multiple choice questions based on recent lecture material.
-
-QUESTION DESIGN:
-- Focus on core concepts and learning objectives covered in recent lectures
-- Create questions that test understanding, not just memorization
-- Use realistic scenarios or examples from the course content
-- Vary difficulty levels across questions (some foundational, some applied)
-
-ANSWER FORMAT:
-- Provide exactly 4 answer choices per question
-- One choice must be clearly correct
-- Incorrect choices should be plausible but incorrect (avoid obvious distractors)
-- At least one incorrect choice should represent a common misconception
-
-EXPLANATION REQUIREMENT:
-For the correct answer, provide a detailed step-by-step explanation that:
-1. Restates the correct answer choice
-2. Explains WHY this answer is correct (the core reasoning)
-3. Shows the step-by-step logic or process used to reach the answer
-4. Reinforces the key concept being tested
-5. References relevant principles or definitions from recent lectures
-
-Make explanations clear for students reviewing their answers. Use simple language while maintaining academic accuracy.
-
-Return ONLY valid JSON array (no markdown, no code blocks):
-[
-  {{
-    "question": "Question text here",
-    "choices": ["Choice A", "Choice B", "Choice C", "Choice D"],
-    "correct_choice_index": 0,
-    "explanation": "Step 1: [reasoning]. Step 2: [logic]. Step 3: [conclusion]. Therefore, [answer] is correct because [reinforcement of key concept]."
-  }}
-]
-"""
-
-                if module_name and topic:
-                    prompt += f"\nContext: Generate questions from {module_name}, specifically on {topic}."
-                elif module_name:
-                    prompt += f"\nContext: Generate questions from {module_name}."
-                elif topic:
-                    prompt += f"\nContext: Generate questions focused on {topic}."
-
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role": "user", "content": prompt}],
-                )
-
-                content = response.choices[0].message.content or "[]"
-
-                try:
-                    llm_questions = json.loads(content)
-                except Exception:
-                    llm_questions = []
-
-                for i, q in enumerate(llm_questions, start=1):
-                    choices = [
-                        {"id": idx + 1, "text": choice}
-                        for idx, choice in enumerate(q["choices"])
-                    ]
-
-                    questions.append(
-                        {
-                            "question_id": i,
-                            "text": q["question"],
-                            "choices": choices,
-                            "correct_choice_id": q["correct_choice_index"] + 1,
-                            "explanation": q["explanation"],
-                        }
-                    )
-            except Exception:
-                # Graceful fallback: if LLM fails for any reason, use sample questions
-                for i in range(1, qcount + 1):
-                    choices = [
-                        {"id": 1, "text": "Option A"},
-                        {"id": 2, "text": "Option B"},
-                        {"id": 3, "text": "Option C"},
-                        {"id": 4, "text": "Option D"},
-                    ]
-                    questions.append(
-                        {
-                            "question_id": i,
-                            "text": f"Sample question {i}",
-                            "choices": choices,
-                            "correct_choice_id": 1,
-                            "explanation": "Because it's the sample answer.",
-                        }
-                    )
+        questions = self._generate_questions_with_llm(qcount=qcount, topics=topics)
 
         _QUIZ_STORE[submission_id] = {
             "submission": {
@@ -245,6 +329,7 @@ Return ONLY valid JSON array (no markdown, no code blocks):
         if data is None:
             raise KeyError("quiz not found")
 
+        # strip correct answers from the questions when returning
         questions = []
         for q in data["questions"]:
             questions.append(
@@ -255,7 +340,8 @@ Return ONLY valid JSON array (no markdown, no code blocks):
                 }
             )
 
-        return {**data["submission"], "questions": questions}
+        resp = {**data["submission"], "questions": questions}
+        return resp
 
     def submit_quiz(self, subject: User, submission_id: int, answers: Any) -> dict[str, Any]:
         data = _QUIZ_STORE.get(int(submission_id))
@@ -273,6 +359,7 @@ Return ONLY valid JSON array (no markdown, no code blocks):
         feedback = result["feedback"]
         finished_at = datetime.now(timezone.utc)
 
+        # update store
         data["submission"].update({"status": "submitted", "finished_at": finished_at})
 
         return {

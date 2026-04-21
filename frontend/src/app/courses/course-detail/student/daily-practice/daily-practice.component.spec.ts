@@ -6,12 +6,16 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
-import { DailyPractice } from './daily-practice.component';
+import { DailyPractice, RECENT_DAILY_SCORES_STORAGE_KEY } from './daily-practice.component';
 import { PageTitleService } from '../../../../page-title.service';
 import { ActivityService } from '../../activities/activity.service';
 import { StriveQuizService } from './strive-quiz.service';
 import { Activity } from '../../../../api/models';
-import { QuizCreateResponse, QuizQuestionsResponse } from './strive-quiz.models';
+import {
+  QuizCreateResponse,
+  QuizQuestionsResponse,
+  QuizSubmitResponse,
+} from './strive-quiz.models';
 
 const flush = () => new Promise((resolve) => setTimeout(resolve));
 
@@ -86,7 +90,33 @@ const fakeQuestionsResponse: QuizQuestionsResponse = {
   ],
 };
 
+const fakeSubmitResponse: QuizSubmitResponse = {
+  id: 101,
+  score: 50,
+  correct_count: 1,
+  total_count: 2,
+  feedback: [
+    {
+      question_id: 1,
+      correct: true,
+      correct_choice_id: 2,
+      explanation: 'def is the Python keyword used to define functions.',
+    },
+    {
+      question_id: 2,
+      correct: false,
+      correct_choice_id: 2,
+      explanation: 'A dictionary stores key-value pairs in Python.',
+    },
+  ],
+  finished_at: '2026-04-20T12:05:00Z',
+};
+
 describe('DailyPractice', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   function setup(
     options: {
       activityList?: Activity[];
@@ -94,6 +124,7 @@ describe('DailyPractice', () => {
       loadActivities?: () => Promise<Activity[]>;
       startQuizResponse?: QuizCreateResponse;
       getQuizResponse?: QuizQuestionsResponse;
+      submitQuizResponse?: QuizSubmitResponse;
     } = {},
   ) {
     const mockPageTitle = {
@@ -111,7 +142,7 @@ describe('DailyPractice', () => {
     const mockQuizService = {
       startQuiz: vi.fn(() => Promise.resolve(options.startQuizResponse ?? fakeCreateResponse)),
       getQuiz: vi.fn(() => Promise.resolve(options.getQuizResponse ?? fakeQuestionsResponse)),
-      submitQuiz: vi.fn(),
+      submitQuiz: vi.fn(() => Promise.resolve(options.submitQuizResponse ?? fakeSubmitResponse)),
     };
 
     const mockRoute = {
@@ -152,7 +183,7 @@ describe('DailyPractice', () => {
     expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
   });
 
-  it('should show immediate feedback after selecting an answer and move to next question', async () => {
+  it('should move to next question after selecting an answer', async () => {
     const { fixture } = setup();
     await flush();
     fixture.detectChanges();
@@ -163,8 +194,6 @@ describe('DailyPractice', () => {
       component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
     ).selectChoice(1, 2);
     fixture.detectChanges();
-
-    expect(fixture.nativeElement.textContent).toContain('Immediate Feedback');
 
     (
       component as unknown as {
@@ -201,7 +230,6 @@ describe('DailyPractice', () => {
       currentChoices: () => unknown[];
       hasAnsweredCurrent: () => boolean;
       selectedChoiceForCurrent: () => unknown;
-      immediateFeedbackForCurrent: () => string;
       nextLabel: () => string;
       answeredCount: () => number;
     };
@@ -211,7 +239,6 @@ describe('DailyPractice', () => {
     expect(state.currentChoices()).toEqual([]);
     expect(state.hasAnsweredCurrent()).toBe(false);
     expect(state.selectedChoiceForCurrent()).toBeNull();
-    expect(state.immediateFeedbackForCurrent()).toBe('');
     expect(state.nextLabel()).toBe('Finish');
     expect(state.answeredCount()).toBe(0);
   });
@@ -226,8 +253,6 @@ describe('DailyPractice', () => {
 
     (radioInputs[1] as HTMLInputElement).click();
     fixture.detectChanges();
-
-    expect(fixture.nativeElement.textContent).toContain('Immediate Feedback');
 
     const nextButton = fixture.nativeElement.querySelector(
       'button[mat-flat-button]',
@@ -252,8 +277,8 @@ describe('DailyPractice', () => {
     expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
   });
 
-  it('should show completion state and restart from the first question', async () => {
-    const { fixture } = setup();
+  it('should submit answers, show AI grading feedback, and restart from the first question', async () => {
+    const { fixture, mockQuizService } = setup();
     await flush();
     fixture.detectChanges();
 
@@ -265,9 +290,10 @@ describe('DailyPractice', () => {
     fixture.detectChanges();
     (
       component as unknown as {
-        onNext: () => void;
+        onNext: () => Promise<void>;
       }
     ).onNext();
+    await flush();
     fixture.detectChanges();
 
     (
@@ -276,13 +302,26 @@ describe('DailyPractice', () => {
     fixture.detectChanges();
     (
       component as unknown as {
-        onNext: () => void;
+        onNext: () => Promise<void>;
       }
     ).onNext();
+    await flush();
     fixture.detectChanges();
 
+    expect(mockQuizService.submitQuiz).toHaveBeenCalledWith(101, {
+      answers: [
+        { question_id: 1, selected_choice_id: 2 },
+        { question_id: 2, selected_choice_id: 3 },
+      ],
+    });
     expect(fixture.nativeElement.textContent).toContain('Challenge complete');
+    expect(fixture.nativeElement.textContent).toContain('Score: 50% (1/2 correct)');
     expect(fixture.nativeElement.textContent).toContain('You answered 2 out of 2 questions.');
+    expect(fixture.nativeElement.textContent).toContain('Correct');
+    expect(fixture.nativeElement.textContent).toContain('Incorrect');
+    expect(fixture.nativeElement.textContent).toContain(
+      'A dictionary stores key-value pairs in Python.',
+    );
 
     const restartButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find(
       (button) => (button as HTMLButtonElement).textContent?.includes('Try Again'),
@@ -296,32 +335,31 @@ describe('DailyPractice', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Challenge complete');
   });
 
-  it('should fall back to mock quiz mode when no strive activity is available', async () => {
+  it('should show an error when no course activities are available', async () => {
     const { fixture, mockQuizService } = setup({ activityList: [] });
     await flush();
     fixture.detectChanges();
 
     expect(mockQuizService.startQuiz).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Quiz unavailable');
     expect(fixture.nativeElement.textContent).toContain(
-      'Showing sample challenge questions while Strive activities are unavailable.',
-    );
-    expect(fixture.nativeElement.textContent).toContain(
-      'Which keyword is used to define a function in Python?',
+      'Unable to load challenge questions because no course activities exist.',
     );
   });
 
-  it('should fall back when the course context is missing', async () => {
+  it('should show an error when the course context is missing', async () => {
     const { fixture, mockActivityService } = setup({ routeCourseId: 'not-a-number' });
     await flush();
     fixture.detectChanges();
 
     expect(mockActivityService.list).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Quiz unavailable');
     expect(fixture.nativeElement.textContent).toContain(
-      'Showing sample challenge questions because course context is missing.',
+      'Unable to load challenge questions because course context is missing.',
     );
   });
 
-  it('should fall back when quiz generation returns no questions', async () => {
+  it('should show an error when quiz generation returns no questions', async () => {
     const emptyQuiz: QuizQuestionsResponse = {
       ...fakeQuestionsResponse,
       questions: [],
@@ -333,12 +371,11 @@ describe('DailyPractice', () => {
 
     expect(mockQuizService.startQuiz).toHaveBeenCalled();
     expect(mockQuizService.getQuiz).toHaveBeenCalled();
-    expect(fixture.nativeElement.textContent).toContain(
-      'Showing sample challenge questions while quiz questions are being generated.',
-    );
+    expect(fixture.nativeElement.textContent).toContain('Quiz unavailable');
+    expect(fixture.nativeElement.textContent).toContain('The quiz service returned no questions.');
   });
 
-  it('should fall back when the quiz API rejects', async () => {
+  it('should show an error when the quiz API rejects', async () => {
     const { fixture, mockActivityService, mockQuizService } = setup({
       loadActivities: () => Promise.reject(new Error('network error')),
     });
@@ -347,8 +384,82 @@ describe('DailyPractice', () => {
 
     expect(mockActivityService.list).toHaveBeenCalled();
     expect(mockQuizService.startQuiz).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Quiz unavailable');
     expect(fixture.nativeElement.textContent).toContain(
-      'Showing sample challenge questions while the Strive quiz API is unavailable.',
+      'Unable to load challenge questions from the Strive quiz API.',
     );
+  });
+
+  it('should show an error when quiz submission fails', async () => {
+    const { fixture, mockQuizService } = setup();
+    mockQuizService.submitQuiz.mockImplementation(() =>
+      Promise.reject(new Error('submission failed')),
+    );
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(1, 2);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(2, 3);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    expect(mockQuizService.submitQuiz).toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).not.toContain('Challenge complete');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Unable to submit quiz answers for grading. Please try again.',
+    );
+  });
+
+  it('should persist completed daily quiz score for dashboard averages', async () => {
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(1, 2);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(2, 3);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    const stored = localStorage.getItem(RECENT_DAILY_SCORES_STORAGE_KEY);
+    expect(stored).not.toBeNull();
+    expect(JSON.parse(stored as string)).toEqual([50]);
   });
 });

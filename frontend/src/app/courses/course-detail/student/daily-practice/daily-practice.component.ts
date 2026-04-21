@@ -12,53 +12,11 @@ import { computed, signal } from '@angular/core';
 import { PageTitleService } from '../../../../page-title.service';
 import { ActivityService } from '../../activities/activity.service';
 import { Activity } from '../../../../api/models';
-import { QuizQuestionsResponse } from './strive-quiz.models';
+import { QuizQuestionsResponse, QuizSubmitResponse } from './strive-quiz.models';
 import { StriveQuizService } from './strive-quiz.service';
 
-const IMMEDIATE_FEEDBACK_PLACEHOLDER =
-  'Good effort. Detailed feedback will be available in the next iteration.';
-
-const FALLBACK_QUIZ: QuizQuestionsResponse = {
-  id: 0,
-  activity_id: 0,
-  student_pid: 0,
-  status: 'in_progress',
-  mode: 'daily',
-  module_name: null,
-  topic: 'Python Basics',
-  questions: [
-    {
-      question_id: 1,
-      text: 'Which keyword is used to define a function in Python?',
-      choices: [
-        { id: 1, text: 'function' },
-        { id: 2, text: 'def' },
-        { id: 3, text: 'lambda' },
-        { id: 4, text: 'fun' },
-      ],
-    },
-    {
-      question_id: 2,
-      text: 'Which data structure stores key-value pairs?',
-      choices: [
-        { id: 1, text: 'List' },
-        { id: 2, text: 'Tuple' },
-        { id: 3, text: 'Dictionary' },
-        { id: 4, text: 'Set' },
-      ],
-    },
-    {
-      question_id: 3,
-      text: 'What does len([1, 2, 3, 4]) return?',
-      choices: [
-        { id: 1, text: '3' },
-        { id: 2, text: '4' },
-        { id: 3, text: '5' },
-        { id: 4, text: 'Error' },
-      ],
-    },
-  ],
-};
+export const RECENT_DAILY_SCORES_STORAGE_KEY = 'lwai-recent-daily-scores';
+const MAX_RECENT_DAILY_SCORES = 10;
 
 /** Placeholder page for the daily-practice experience. */
 @Component({
@@ -74,12 +32,12 @@ export class DailyPractice {
   private readonly striveQuizService = inject(StriveQuizService);
 
   protected readonly loading = signal(true);
+  protected readonly submitting = signal(false);
   protected readonly message = signal('');
-  protected readonly usingMockData = signal(false);
   protected readonly quiz = signal<QuizQuestionsResponse | null>(null);
+  protected readonly submissionResult = signal<QuizSubmitResponse | null>(null);
   protected readonly currentQuestionIndex = signal(0);
   protected readonly selectedChoicesByQuestion = signal<Record<number, number>>({});
-  protected readonly immediateFeedbackByQuestion = signal<Record<number, string>>({});
   protected readonly complete = signal(false);
 
   protected readonly totalQuestions = computed(() => this.quiz()?.questions.length ?? 0);
@@ -100,17 +58,17 @@ export class DailyPractice {
     if (question === null) return null;
     return this.selectedChoicesByQuestion()[question.question_id] ?? null;
   });
-  protected readonly immediateFeedbackForCurrent = computed(() => {
-    const question = this.currentQuestion();
-    if (question === null) return '';
-    return this.immediateFeedbackByQuestion()[question.question_id] ?? '';
-  });
   protected readonly nextLabel = computed(() =>
     this.questionNumber() >= this.totalQuestions() ? 'Finish' : 'Next',
   );
   protected readonly answeredCount = computed(
     () => Object.keys(this.selectedChoicesByQuestion()).length,
   );
+  protected readonly scorePercent = computed(() => Math.round(this.submissionResult()?.score ?? 0));
+  protected readonly feedbackByQuestionId = computed(() => {
+    const feedback = this.submissionResult()?.feedback ?? [];
+    return new Map(feedback.map((entry) => [entry.question_id, entry]));
+  });
 
   constructor() {
     this.titleService.setTitle("Today's Challenge");
@@ -122,17 +80,13 @@ export class DailyPractice {
       ...state,
       [questionId]: choiceId,
     }));
-    this.immediateFeedbackByQuestion.update((state) => ({
-      ...state,
-      [questionId]: IMMEDIATE_FEEDBACK_PLACEHOLDER,
-    }));
   }
 
-  protected onNext(): void {
+  protected async onNext(): Promise<void> {
     if (!this.hasAnsweredCurrent()) return;
 
     if (this.questionNumber() >= this.totalQuestions()) {
-      this.complete.set(true);
+      await this.submitCurrentQuiz();
       return;
     }
 
@@ -142,7 +96,7 @@ export class DailyPractice {
   protected restart(): void {
     this.currentQuestionIndex.set(0);
     this.selectedChoicesByQuestion.set({});
-    this.immediateFeedbackByQuestion.set({});
+    this.submissionResult.set(null);
     this.complete.set(false);
   }
 
@@ -150,33 +104,27 @@ export class DailyPractice {
     const courseId = Number(this.route.parent?.parent?.snapshot.paramMap.get('id'));
 
     if (Number.isNaN(courseId)) {
-      this.loadFallbackQuiz(
-        'Showing sample challenge questions because course context is missing.',
-      );
+      this.setLoadError('Unable to load challenge questions because course context is missing.');
       return;
     }
 
     try {
       const activities = await this.activityService.list(courseId);
-      const striveActivity = this.findStriveActivity(activities);
+      const quizActivity = activities[0] ?? null;
 
-      if (striveActivity === null) {
-        this.loadFallbackQuiz(
-          'Showing sample challenge questions while Strive activities are unavailable.',
-        );
+      if (quizActivity === null) {
+        this.setLoadError('Unable to load challenge questions because no course activities exist.');
         return;
       }
 
-      const createdQuiz = await this.striveQuizService.startQuiz(striveActivity.id, {
+      const createdQuiz = await this.striveQuizService.startQuiz(quizActivity.id, {
         mode: 'daily',
         question_count: 5,
       });
       const quiz = await this.striveQuizService.getQuiz(createdQuiz.id);
 
       if (quiz.questions.length === 0) {
-        this.loadFallbackQuiz(
-          'Showing sample challenge questions while quiz questions are being generated.',
-        );
+        this.setLoadError('The quiz service returned no questions.');
         return;
       }
 
@@ -187,26 +135,64 @@ export class DailyPractice {
           choices: question.choices.slice(0, 4),
         })),
       });
+      this.submissionResult.set(null);
       this.message.set('');
-      this.usingMockData.set(false);
     } catch {
-      this.loadFallbackQuiz(
-        'Showing sample challenge questions while the Strive quiz API is unavailable.',
-      );
+      this.setLoadError('Unable to load challenge questions from the Strive quiz API.');
     } finally {
       this.loading.set(false);
     }
   }
 
-  private findStriveActivity(activities: Activity[]): Activity | null {
-    const match = activities.find((activity) => activity.type.toLowerCase().includes('strive'));
-    return match ?? null;
+  private async submitCurrentQuiz(): Promise<void> {
+    const quiz = this.quiz();
+    if (quiz === null) return;
+
+    this.submitting.set(true);
+
+    try {
+      const answers = quiz.questions.map((question) => ({
+        question_id: question.question_id,
+        selected_choice_id: this.selectedChoicesByQuestion()[question.question_id],
+      }));
+
+      const result = await this.striveQuizService.submitQuiz(quiz.id, { answers });
+      this.submissionResult.set(result);
+      this.persistRecentDailyScore(result.score);
+      this.message.set('');
+      this.complete.set(true);
+    } catch {
+      this.message.set('Unable to submit quiz answers for grading. Please try again.');
+    } finally {
+      this.submitting.set(false);
+    }
   }
 
-  private loadFallbackQuiz(message: string): void {
-    this.quiz.set(FALLBACK_QUIZ);
+  private persistRecentDailyScore(score: number): void {
+    if (typeof localStorage === 'undefined' || !Number.isFinite(score)) {
+      return;
+    }
+
+    let existingScores: number[] = [];
+    try {
+      const raw = localStorage.getItem(RECENT_DAILY_SCORES_STORAGE_KEY);
+      const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+      if (Array.isArray(parsed)) {
+        existingScores = parsed.filter(
+          (value): value is number => typeof value === 'number' && Number.isFinite(value),
+        );
+      }
+    } catch {
+      existingScores = [];
+    }
+
+    const updated = [score, ...existingScores].slice(0, MAX_RECENT_DAILY_SCORES);
+    localStorage.setItem(RECENT_DAILY_SCORES_STORAGE_KEY, JSON.stringify(updated));
+  }
+
+  private setLoadError(message: string): void {
+    this.quiz.set(null);
     this.message.set(message);
-    this.usingMockData.set(true);
     this.loading.set(false);
   }
 }

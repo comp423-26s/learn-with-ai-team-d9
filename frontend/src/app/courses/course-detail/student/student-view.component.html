@@ -16,7 +16,7 @@
   </header>
 
   <section class="grid gap-4 md:grid-cols-3" aria-label="Performance stats overview">
-    @for (stat of topLevelStats; track stat.label) {
+    @for (stat of topLevelStats(); track stat.label) {
       <mat-card appearance="outlined">
         <mat-card-content class="space-y-1">
           <p class="text-sm font-medium opacity-75">{{ stat.label }}</p>
