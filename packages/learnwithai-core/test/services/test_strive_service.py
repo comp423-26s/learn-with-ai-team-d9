@@ -61,6 +61,20 @@ def test_get_and_submit_raise_for_missing_quiz() -> None:
     except KeyError:
         pass
 
+
+def test_start_quiz_reuses_existing_matching_submission() -> None:
+    svc = StriveService()
+    subject = cast(User, type("U", (), {"pid": 456})())
+    activity = cast(Activity, type("A", (), {"id": 77})())
+
+    options = type("O", (), {"question_count": 5, "mode": "daily", "module_name": None, "topic": None})()
+
+    first = svc.start_quiz(subject=subject, activity=activity, options=options)
+    second = svc.start_quiz(subject=subject, activity=activity, options=options)
+
+    assert second.id == first.id
+    assert second.question_count == first.question_count
+
     try:
         svc.submit_quiz(subject=subject, submission_id=9999999, answers=[])
         raise AssertionError("expected KeyError")

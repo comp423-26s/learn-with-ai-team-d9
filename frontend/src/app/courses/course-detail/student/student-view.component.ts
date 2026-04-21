@@ -3,12 +3,13 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
+import { Component, ChangeDetectionStrategy, computed, inject } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { RouterLink, RouterOutlet } from '@angular/router';
 import { PageTitleService } from '../../../page-title.service';
 import { LayoutNavigationService } from '../../../layout/layout-navigation.service';
+import { RECENT_DAILY_SCORES_STORAGE_KEY } from './daily-practice/daily-practice.component';
 
 type StudentTopLevelStat = {
   label: string;
@@ -26,8 +27,9 @@ type StudentTopLevelStat = {
 export class StudentView {
   private titleService = inject(PageTitleService);
   private layoutNavigation = inject(LayoutNavigationService);
+  private readonly recentDailyScores = this.readRecentDailyScores();
 
-  protected readonly topLevelStats: StudentTopLevelStat[] = [
+  protected readonly topLevelStats = computed<StudentTopLevelStat[]>(() => [
     {
       label: 'Streak',
       value: '6 days',
@@ -40,13 +42,43 @@ export class StudentView {
     },
     {
       label: 'Average',
-      value: '87%',
+      value: this.averageScoreLabel(),
       description: 'Average score across recent daily challenges',
     },
-  ];
+  ]);
 
   constructor() {
     this.layoutNavigation.clearContext();
     this.titleService.setTitle('Student Dashboard');
+  }
+
+  private averageScoreLabel(): string {
+    const scores = this.recentDailyScores;
+    if (scores.length === 0) {
+      return '--';
+    }
+
+    const total = scores.reduce((sum, score) => sum + score, 0);
+    return `${Math.round(total / scores.length)}%`;
+  }
+
+  private readRecentDailyScores(): number[] {
+    if (typeof localStorage === 'undefined') {
+      return [];
+    }
+
+    try {
+      const raw = localStorage.getItem(RECENT_DAILY_SCORES_STORAGE_KEY);
+      const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+
+      return parsed.filter(
+        (value): value is number => typeof value === 'number' && Number.isFinite(value),
+      );
+    } catch {
+      return [];
+    }
   }
 }
