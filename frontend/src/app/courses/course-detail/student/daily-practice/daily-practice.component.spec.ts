@@ -429,6 +429,321 @@ describe('DailyPractice', () => {
     );
   });
 
+  it('should show submitting status while final quiz submission is pending', async () => {
+    const deferredSubmit = createDeferred<QuizSubmitResponse>();
+    const { fixture, mockQuizService } = setup();
+    mockQuizService.submitQuiz.mockReturnValueOnce(deferredSubmit.promise);
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(1, 2);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(2, 3);
+
+    const submitPromise = (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Submitting...');
+
+    deferredSubmit.resolve(fakeSubmitResponse);
+    await submitPromise;
+    await flush();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Challenge complete');
+  });
+
+  it('should show message content in the completed state when present', async () => {
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(1, 2);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(2, 3);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+
+    (component as unknown as { message: { set: (message: string) => void } }).message.set(
+      'Review complete.',
+    );
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Review complete.');
+  });
+
+  it('should expose score and feedback maps after completion', async () => {
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(1, 2);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(2, 3);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    const state = component as unknown as {
+      scorePercent: () => number;
+      feedbackByQuestionId: () => Map<number, { correct: boolean }>;
+    };
+
+    expect(state.scorePercent()).toBe(50);
+    expect(state.feedbackByQuestionId().get(1)?.correct).toBe(true);
+    expect(state.feedbackByQuestionId().get(2)?.correct).toBe(false);
+  });
+
+  it('should render completion view when result metadata is missing', async () => {
+    const { fixture } = setup();
+    await flush();
+
+    const component = fixture.componentInstance as DailyPractice;
+    const state = component as unknown as {
+      loading: { set: (value: boolean) => void };
+      complete: { set: (value: boolean) => void };
+      quiz: { set: (value: QuizQuestionsResponse | null) => void };
+      submissionResult: { set: (value: QuizSubmitResponse | null) => void };
+      selectedChoicesByQuestion: { set: (value: Record<number, number>) => void };
+      message: { set: (value: string) => void };
+    };
+
+    state.loading.set(false);
+    state.complete.set(true);
+    state.quiz.set(fakeQuestionsResponse);
+    state.submissionResult.set(null);
+    state.selectedChoicesByQuestion.set({ 1: 2 });
+    state.message.set('');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Challenge complete');
+    expect(fixture.nativeElement.textContent).toContain('You answered 1 out of 2 questions.');
+    expect(fixture.nativeElement.textContent).not.toContain('Score:');
+    expect(fixture.nativeElement.textContent).not.toContain('Correct');
+  });
+
+  it('should return early when submission runs without a quiz loaded', async () => {
+    const { fixture, mockQuizService } = setup();
+    await flush();
+
+    const component = fixture.componentInstance as DailyPractice;
+    const state = component as unknown as {
+      quiz: { set: (value: QuizQuestionsResponse | null) => void };
+      submitCurrentQuiz: () => Promise<void>;
+    };
+
+    state.quiz.set(null);
+    await state.submitCurrentQuiz();
+    fixture.detectChanges();
+
+    expect(mockQuizService.submitQuiz).not.toHaveBeenCalled();
+  });
+
+  it('should compute zero score when no submission result exists', async () => {
+    const { fixture } = setup();
+    await flush();
+
+    const component = fixture.componentInstance as DailyPractice;
+    const state = component as unknown as {
+      scorePercent: () => number;
+      submissionResult: { set: (value: QuizSubmitResponse | null) => void };
+    };
+
+    state.submissionResult.set(null);
+    fixture.detectChanges();
+
+    expect(state.scorePercent()).toBe(0);
+  });
+
+  it('should render completion summary without quiz feedback details', async () => {
+    const { fixture } = setup();
+    await flush();
+
+    const component = fixture.componentInstance as DailyPractice;
+    const state = component as unknown as {
+      loading: { set: (value: boolean) => void };
+      complete: { set: (value: boolean) => void };
+      quiz: { set: (value: QuizQuestionsResponse | null) => void };
+      submissionResult: { set: (value: QuizSubmitResponse | null) => void };
+      selectedChoicesByQuestion: { set: (value: Record<number, number>) => void };
+      message: { set: (value: string) => void };
+    };
+
+    state.loading.set(false);
+    state.complete.set(true);
+    state.quiz.set(null);
+    state.submissionResult.set(fakeSubmitResponse);
+    state.selectedChoicesByQuestion.set({ 1: 2 });
+    state.message.set('');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Challenge complete');
+    expect(fixture.nativeElement.textContent).toContain('Score: 50% (1/2 correct)');
+    expect(fixture.nativeElement.textContent).not.toContain('Which keyword defines a function?');
+  });
+
+  it('should persist only finite previous scores and prepend the latest score', async () => {
+    localStorage.setItem(
+      RECENT_DAILY_SCORES_STORAGE_KEY,
+      JSON.stringify([88, 'bad', null, 76, Number.POSITIVE_INFINITY]),
+    );
+
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(1, 2);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(2, 3);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    const stored = localStorage.getItem(RECENT_DAILY_SCORES_STORAGE_KEY);
+    expect(stored).not.toBeNull();
+    expect(JSON.parse(stored as string)).toEqual([50, 88, 76]);
+  });
+
+  it('should recover from malformed existing score history while persisting', async () => {
+    localStorage.setItem(RECENT_DAILY_SCORES_STORAGE_KEY, '{');
+
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(1, 2);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(2, 3);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    const stored = localStorage.getItem(RECENT_DAILY_SCORES_STORAGE_KEY);
+    expect(stored).not.toBeNull();
+    expect(JSON.parse(stored as string)).toEqual([50]);
+  });
+
+  it('should not persist non-finite scores', async () => {
+    const { fixture } = setup({
+      submitQuizResponse: {
+        ...fakeSubmitResponse,
+        score: Number.NaN,
+      },
+    });
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(1, 2);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(2, 3);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    expect(localStorage.getItem(RECENT_DAILY_SCORES_STORAGE_KEY)).toBeNull();
+  });
+
   it('should persist completed daily quiz score for dashboard averages', async () => {
     const { fixture } = setup();
     await flush();

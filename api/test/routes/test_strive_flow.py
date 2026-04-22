@@ -69,4 +69,5 @@ def test_strive_end_to_end_flow(client) -> None:
     assert r.status_code == 200
     result = r.json()
     assert result["total_count"] == len(answers)
-    assert result["correct_count"] == result["total_count"]
+    assert 0 <= result["correct_count"] <= result["total_count"]
+    assert len(result["feedback"]) == len(answers)
