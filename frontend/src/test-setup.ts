@@ -6,10 +6,20 @@
 import { NgModule } from '@angular/core';
 import { getTestBed, ɵgetCleanupHook as getCleanupHook } from '@angular/core/testing';
 import { BrowserTestingModule, platformBrowserTesting } from '@angular/platform-browser/testing';
-import { afterEach, beforeEach } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
+
+beforeEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 beforeEach(getCleanupHook(false));
 afterEach(getCleanupHook(true));
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 const ANGULAR_TESTBED_SETUP = Symbol.for('@learnwithai/angular-testbed-setup');
 

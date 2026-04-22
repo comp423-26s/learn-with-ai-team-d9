@@ -11,11 +11,11 @@ import { MatRadioModule } from '@angular/material/radio';
 import { computed, signal } from '@angular/core';
 import { PageTitleService } from '../../../../page-title.service';
 import { ActivityService } from '../../activities/activity.service';
-import { Activity } from '../../../../api/models';
 import { QuizQuestionsResponse, QuizSubmitResponse } from './strive-quiz.models';
 import { StriveQuizService } from './strive-quiz.service';
 
 export const RECENT_DAILY_SCORES_STORAGE_KEY = 'lwai-recent-daily-scores';
+export const STREAK_DATES_STORAGE_KEY = 'lwai-streak-dates';
 const MAX_RECENT_DAILY_SCORES = 10;
 
 /** Placeholder page for the daily-practice experience. */
@@ -159,12 +159,34 @@ export class DailyPractice {
       const result = await this.striveQuizService.submitQuiz(quiz.id, { answers });
       this.submissionResult.set(result);
       this.persistRecentDailyScore(result.score);
+      this.persistStreakDate();
       this.message.set('');
       this.complete.set(true);
     } catch {
       this.message.set('Unable to submit quiz answers for grading. Please try again.');
     } finally {
       this.submitting.set(false);
+    }
+  }
+
+  private persistStreakDate(): void {
+    if (typeof localStorage === 'undefined') return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    let dates: string[] = [];
+    try {
+      const raw = localStorage.getItem(STREAK_DATES_STORAGE_KEY);
+      const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+      if (Array.isArray(parsed)) {
+        dates = parsed.filter((v): v is string => typeof v === 'string');
+      }
+    } catch {
+      dates = [];
+    }
+
+    if (!dates.includes(today)) {
+      dates.push(today);
+      localStorage.setItem(STREAK_DATES_STORAGE_KEY, JSON.stringify(dates));
     }
   }
 

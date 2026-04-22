@@ -6,7 +6,11 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
-import { DailyPractice, RECENT_DAILY_SCORES_STORAGE_KEY } from './daily-practice.component';
+import {
+  DailyPractice,
+  RECENT_DAILY_SCORES_STORAGE_KEY,
+  STREAK_DATES_STORAGE_KEY,
+} from './daily-practice.component';
 import { PageTitleService } from '../../../../page-title.service';
 import { ActivityService } from '../../activities/activity.service';
 import { StriveQuizService } from './strive-quiz.service';
@@ -427,6 +431,288 @@ describe('DailyPractice', () => {
     expect(fixture.nativeElement.textContent).toContain(
       'Unable to submit quiz answers for grading. Please try again.',
     );
+  });
+
+  it('should show submitting state while quiz answers are being graded', async () => {
+    const deferredSubmit = createDeferred<QuizSubmitResponse>();
+    const { fixture, mockQuizService } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (component as unknown as { selectChoice: (q: number, c: number) => void }).selectChoice(1, 2);
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    fixture.detectChanges();
+
+    mockQuizService.submitQuiz.mockReturnValue(deferredSubmit.promise);
+    (component as unknown as { selectChoice: (q: number, c: number) => void }).selectChoice(2, 3);
+    void (component as unknown as { onNext: () => Promise<void> }).onNext();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Submitting...');
+
+    deferredSubmit.resolve(fakeSubmitResponse);
+    await flush();
+    fixture.detectChanges();
+  });
+
+  it('should default scorePercent to 0 and feedbackByQuestionId to an empty map when no result exists', async () => {
+    const deferred = createDeferred<Activity[]>();
+    const { fixture } = setup({ loadActivities: () => deferred.promise });
+
+    const comp = fixture.componentInstance as unknown as {
+      scorePercent: () => number;
+      feedbackByQuestionId: () => Map<number, unknown>;
+    };
+
+    expect(comp.scorePercent()).toBe(0);
+    expect(comp.feedbackByQuestionId().size).toBe(0);
+
+    deferred.resolve([]);
+    await flush();
+  });
+
+  it('should return early from submitCurrentQuiz when no quiz is loaded', async () => {
+    const deferred = createDeferred<Activity[]>();
+    const { fixture, mockQuizService } = setup({ loadActivities: () => deferred.promise });
+
+    await (
+      fixture.componentInstance as unknown as {
+        submitCurrentQuiz: () => Promise<void>;
+      }
+    ).submitCurrentQuiz();
+
+    expect(mockQuizService.submitQuiz).not.toHaveBeenCalled();
+
+    deferred.resolve([]);
+    await flush();
+  });
+
+  it('should render a message inside the complete section when both complete and message are set', async () => {
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const comp = fixture.componentInstance as unknown as {
+      complete: { set: (v: boolean) => void };
+      message: { set: (v: string) => void };
+    };
+    comp.complete.set(true);
+    comp.message.set('Something went wrong after grading.');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Something went wrong after grading.');
+  });
+
+  it('should render the complete state without quiz feedback when quiz data is missing', async () => {
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as unknown as {
+      complete: { set: (value: boolean) => void };
+      quiz: { set: (value: QuizQuestionsResponse | null) => void };
+      submissionResult: { set: (value: QuizSubmitResponse | null) => void };
+    };
+
+    component.quiz.set(null);
+    component.submissionResult.set({ ...fakeSubmitResponse, feedback: [] });
+    component.complete.set(true);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Challenge complete');
+    expect(fixture.nativeElement.textContent).not.toContain('Quiz feedback');
+  });
+
+  it('should persist today ISO date to streak storage on quiz completion', async () => {
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (component as unknown as { selectChoice: (qid: number, cid: number) => void }).selectChoice(
+      1,
+      2,
+    );
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    (component as unknown as { selectChoice: (qid: number, cid: number) => void }).selectChoice(
+      2,
+      3,
+    );
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    const stored = localStorage.getItem(STREAK_DATES_STORAGE_KEY);
+    expect(stored).not.toBeNull();
+    const dates = JSON.parse(stored as string) as unknown[];
+    const today = new Date().toISOString().slice(0, 10);
+    expect(dates).toContain(today);
+  });
+
+  it('should not duplicate today in streak storage on repeated submissions', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    localStorage.setItem(STREAK_DATES_STORAGE_KEY, JSON.stringify([today]));
+
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (component as unknown as { selectChoice: (qid: number, cid: number) => void }).selectChoice(
+      1,
+      2,
+    );
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    await flush();
+    (component as unknown as { selectChoice: (qid: number, cid: number) => void }).selectChoice(
+      2,
+      3,
+    );
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    const stored = localStorage.getItem(STREAK_DATES_STORAGE_KEY);
+    const dates = JSON.parse(stored as string) as unknown[];
+    expect(dates.filter((d) => d === today).length).toBe(1);
+  });
+
+  it('should skip persistence when localStorage is not available during submission', async () => {
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    vi.stubGlobal('localStorage', undefined);
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (component as unknown as { selectChoice: (q: number, c: number) => void }).selectChoice(1, 2);
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    await flush();
+    (component as unknown as { selectChoice: (q: number, c: number) => void }).selectChoice(2, 3);
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Challenge complete');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('should recover gracefully when streak storage contains invalid JSON', async () => {
+    localStorage.setItem(STREAK_DATES_STORAGE_KEY, 'not valid json');
+
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (component as unknown as { selectChoice: (qid: number, cid: number) => void }).selectChoice(
+      1,
+      2,
+    );
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    await flush();
+    (component as unknown as { selectChoice: (qid: number, cid: number) => void }).selectChoice(
+      2,
+      3,
+    );
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    const stored = localStorage.getItem(STREAK_DATES_STORAGE_KEY);
+    expect(stored).not.toBeNull();
+    const dates = JSON.parse(stored as string) as unknown[];
+    const today = new Date().toISOString().slice(0, 10);
+    expect(dates).toContain(today);
+  });
+
+  it('should not persist score when quiz returns a non-finite score', async () => {
+    const nanScoreResponse = { ...fakeSubmitResponse, score: NaN };
+    const { fixture } = setup({ submitQuizResponse: nanScoreResponse });
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (component as unknown as { selectChoice: (qid: number, cid: number) => void }).selectChoice(
+      1,
+      2,
+    );
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    await flush();
+    (component as unknown as { selectChoice: (qid: number, cid: number) => void }).selectChoice(
+      2,
+      3,
+    );
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    expect(localStorage.getItem(RECENT_DAILY_SCORES_STORAGE_KEY)).toBeNull();
+  });
+
+  it('should append score to existing scores stored from a previous session', async () => {
+    localStorage.setItem(RECENT_DAILY_SCORES_STORAGE_KEY, JSON.stringify([80]));
+
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (component as unknown as { selectChoice: (qid: number, cid: number) => void }).selectChoice(
+      1,
+      2,
+    );
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    await flush();
+    (component as unknown as { selectChoice: (qid: number, cid: number) => void }).selectChoice(
+      2,
+      3,
+    );
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    const stored = localStorage.getItem(RECENT_DAILY_SCORES_STORAGE_KEY);
+    expect(JSON.parse(stored as string)).toEqual([50, 80]);
+  });
+
+  it('should recover gracefully when scores storage contains invalid JSON', async () => {
+    localStorage.setItem(RECENT_DAILY_SCORES_STORAGE_KEY, 'not valid json');
+
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (component as unknown as { selectChoice: (qid: number, cid: number) => void }).selectChoice(
+      1,
+      2,
+    );
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    await flush();
+    (component as unknown as { selectChoice: (qid: number, cid: number) => void }).selectChoice(
+      2,
+      3,
+    );
+    await (component as unknown as { onNext: () => Promise<void> }).onNext();
+    await flush();
+    fixture.detectChanges();
+
+    const stored = localStorage.getItem(RECENT_DAILY_SCORES_STORAGE_KEY);
+    expect(JSON.parse(stored as string)).toEqual([50]);
   });
 
   it('should persist completed daily quiz score for dashboard averages', async () => {

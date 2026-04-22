@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-from urllib.parse import parse_qs, urlparse
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
@@ -376,7 +376,12 @@ def test_enhanced_prompt_with_step_by_step_explanation(authenticated_client: Tes
         },
         {
             "question": "How do you define a function in Python?",
-            "choices": ["Using the 'function' keyword", "Using the 'def' keyword followed by a colon", "Using parentheses only", "Functions cannot be defined"],
+            "choices": [
+                "Using the 'function' keyword",
+                "Using the 'def' keyword followed by a colon",
+                "Using parentheses only",
+                "Functions cannot be defined",
+            ],
             "correct_choice_index": 1,
             "explanation": (
                 "Step 1: Python uses the 'def' keyword to define functions. "
