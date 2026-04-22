@@ -29,31 +29,6 @@ class _QuizHandle:
     topic: str | None = None
 
 
-_MOCK_TOPIC_DB: dict[str, tuple[str, ...]] = {
-    "Python": (
-        "functions",
-        "lists and dictionaries",
-        "control flow",
-        "exceptions",
-        "file I/O",
-    ),
-    "Java": (
-        "classes and objects",
-        "interfaces",
-        "collections framework",
-        "exception handling",
-        "streams",
-    ),
-    "C": (
-        "pointers",
-        "memory allocation",
-        "structs",
-        "file handling",
-        "header files and compilation",
-    ),
-}
-
-
 def grade_answers(questions: List[dict], answers: Any, mode: str | None = None) -> dict[str, Any]:
     """Grade submitted answers against `questions`.
 
@@ -69,6 +44,7 @@ def grade_answers(questions: List[dict], answers: Any, mode: str | None = None) 
     Returns a dict with keys: `score`, `accuracy`, `correct_count`,
     `total_count`, and `feedback` (list per question).
     """
+    question_map = {q["question_id"]: q for q in questions}
     correct_map = {q["question_id"]: q.get("correct_choice_id") for q in questions}
 
     feedback: List[dict] = []
@@ -86,8 +62,7 @@ def grade_answers(questions: List[dict], answers: Any, mode: str | None = None) 
         if correct:
             correct_count += 1
 
-        # Pull explanation from the question itself so LLM-generated feedback is preserved
-        question_match = next((q for q in questions if q["question_id"] == qid), None)
+        question_match = question_map.get(qid)
         explanation = question_match.get("explanation") if question_match else None
 
         feedback.append(
@@ -127,24 +102,14 @@ class StriveService:
             base_url=f"{self.settings.openai_endpoint.rstrip('/')}/openai/v1/",
         )
 
-    def _select_language(self, module_name: str | None, topic: str | None) -> str:
-        context = " ".join(part for part in [module_name, topic] if part).lower()
-        if "java" in context:
-            return "Java"
-        if "c" in context or "pointer" in context or "memory" in context or "struct" in context:
-            return "C"
-        return "Python"
-
-    def _build_llm_prompt(self, topics: tuple[str, ...]) -> str:
-        """Build the fixed quiz-generation prompt with only the topic list swapped in."""
-
-        topic_list = ", ".join(topics)
+    def _build_llm_prompt(self, qcount: int) -> str:
         return (
-            "Reference the list of topics and generate 5 mcq questions with 4 answer choices each. "
-            "Have each question come from one of the listed topics (topics go here) and have all at least one question "
-            "come from each topic so all the topics are being tested.\n"
-            f"Topics: {topic_list}\n"
-            "Keep each explanation brief (one sentence).\n"
+            f"Generate exactly {qcount} beginner-level Python multiple-choice questions for students.\n"
+            "Focus on basic Python concepts such as variables, data types, lists, dictionaries, "
+            "conditionals, loops, functions, and simple input/output.\n"
+            "Each question must have exactly 4 answer choices.\n"
+            "Keep each explanation brief and beginner-friendly (one sentence).\n"
+            "Avoid trick questions and advanced topics.\n"
             "Return ONLY valid JSON as an array with this schema:\n"
             "[\n"
             "  {\n"
@@ -156,67 +121,74 @@ class StriveService:
             "]"
         )
 
-    def _generate_questions_with_llm(self, qcount: int, topics: tuple[str, ...]) -> List[dict]:
+    def _generate_questions_with_llm(self, qcount: int) -> List[dict]:
         """Generate quiz questions with the LLM and normalize them into app format."""
-        prompt = self._build_llm_prompt(topics=topics)
+        prompt = self._build_llm_prompt(qcount=qcount)
 
-        response = self.client.chat.completions.create(
-            model=self.settings.openai_model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a helpful educational question generator that returns strict JSON only.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-        )
+        last_error: Exception | None = None
 
-        content = response.choices[0].message.content or ""
-
-        try:
-            parsed = json.loads(content)
-        except json.JSONDecodeError as exc:
-            raise ValueError("Strive quiz generation returned non-JSON content.") from exc
-
-        if not isinstance(parsed, list) or len(parsed) < qcount:
-            raise ValueError("Strive quiz generation returned too few questions.")
-
-        questions: List[dict] = []
-
-        for i, item in enumerate(parsed[:qcount], start=1):
-            if not isinstance(item, dict):
-                raise ValueError("Strive quiz generation returned an invalid question payload.")
-
-            raw_choices = item.get("choices", [])
-            if not isinstance(raw_choices, list) or len(raw_choices) != 4:
-                raise ValueError("Strive quiz generation returned invalid choices.")
-
-            correct_choice_index = item.get("correct_choice_index", 0)
-            if not isinstance(correct_choice_index, int) or correct_choice_index not in range(4):
-                raise ValueError("Strive quiz generation returned an invalid correct choice index.")
-
-            choices = [{"id": idx + 1, "text": str(choice)} for idx, choice in enumerate(raw_choices)]
-
-            questions.append(
-                {
-                    "question_id": i,
-                    "text": str(item.get("question", f"Generated question {i}")),
-                    "choices": choices,
-                    "correct_choice_id": correct_choice_index + 1,
-                    "explanation": str(
-                        item.get(
-                            "explanation",
-                            (
-                                "Step 1: Identify the relevant concept. "
-                                "Step 2: Compare the options. "
-                                "Step 3: Choose the best-supported answer."
-                            ),
-                        )
-                    ),
-                }
+        for _ in range(2):
+            response = self.client.chat.completions.create(
+                model=self.settings.openai_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a helpful educational question generator that returns strict JSON only.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
             )
 
-        return questions
+            content = response.choices[0].message.content or ""
+
+            try:
+                parsed = json.loads(content)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                continue
+
+            if not isinstance(parsed, list) or len(parsed) < qcount:
+                last_error = ValueError("Strive quiz generation returned too few questions.")
+                continue
+
+            questions: List[dict] = []
+
+            for i, item in enumerate(parsed[:qcount], start=1):
+                if not isinstance(item, dict):
+                    raise ValueError("Strive quiz generation returned an invalid question payload.")
+
+                raw_choices = item.get("choices", [])
+                if not isinstance(raw_choices, list) or len(raw_choices) != 4:
+                    raise ValueError("Strive quiz generation returned invalid choices.")
+
+                correct_choice_index = item.get("correct_choice_index", 0)
+                if not isinstance(correct_choice_index, int) or correct_choice_index not in range(4):
+                    raise ValueError("Strive quiz generation returned an invalid correct choice index.")
+
+                choices = [{"id": idx + 1, "text": str(choice)} for idx, choice in enumerate(raw_choices)]
+
+                questions.append(
+                    {
+                        "question_id": i,
+                        "text": str(item.get("question", f"Generated question {i}")),
+                        "choices": choices,
+                        "correct_choice_id": correct_choice_index + 1,
+                        "explanation": str(
+                            item.get(
+                                "explanation",
+                                (
+                                    "Step 1: Identify the relevant concept. "
+                                    "Step 2: Compare the options. "
+                                    "Step 3: Choose the best-supported answer."
+                                ),
+                            )
+                        ),
+                    }
+                )
+
+            return questions
+
+        raise ValueError("Strive quiz generation returned invalid JSON content.") from last_error
 
     def _find_reusable_submission(
         self,
@@ -289,13 +261,10 @@ class StriveService:
                 topic=existing.get("topic"),
             )
 
-        language = self._select_language(module_name=module_name, topic=topic)
-        topics = _MOCK_TOPIC_DB[language]
-
         submission_id = next(_NEXT_ID)
         started_at = datetime.now(timezone.utc)
 
-        questions = self._generate_questions_with_llm(qcount=qcount, topics=topics)
+        questions = self._generate_questions_with_llm(qcount=qcount)
 
         _QUIZ_STORE[submission_id] = {
             "submission": {
@@ -329,7 +298,10 @@ class StriveService:
         if data is None:
             raise KeyError("quiz not found")
 
-        # strip correct answers from the questions when returning
+        if data["submission"]["student_pid"] != subject.pid:
+            raise PermissionError("not allowed")
+
+        # Strip correct answers from the questions when returning.
         questions = []
         for q in data["questions"]:
             questions.append(
@@ -340,17 +312,19 @@ class StriveService:
                 }
             )
 
-        resp = {**data["submission"], "questions": questions}
-        return resp
+        return {**data["submission"], "questions": questions}
 
     def submit_quiz(self, subject: User, submission_id: int, answers: Any) -> dict[str, Any]:
         data = _QUIZ_STORE.get(int(submission_id))
         if data is None:
             raise KeyError("quiz not found")
+
+        if data["submission"]["student_pid"] != subject.pid:
+            raise PermissionError("not allowed")
+
         questions = data["questions"]
         mode = data["submission"].get("mode")
 
-        # Use grading helper
         result = grade_answers(questions, answers, mode=mode)
         score = result["score"]
         accuracy = result["accuracy"]
@@ -359,7 +333,6 @@ class StriveService:
         feedback = result["feedback"]
         finished_at = datetime.now(timezone.utc)
 
-        # update store
         data["submission"].update({"status": "submitted", "finished_at": finished_at})
 
         return {

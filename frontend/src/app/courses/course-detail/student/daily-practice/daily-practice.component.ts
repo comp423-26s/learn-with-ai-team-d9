@@ -11,7 +11,6 @@ import { MatRadioModule } from '@angular/material/radio';
 import { computed, signal } from '@angular/core';
 import { PageTitleService } from '../../../../page-title.service';
 import { ActivityService } from '../../activities/activity.service';
-import { Activity } from '../../../../api/models';
 import { QuizQuestionsResponse, QuizSubmitResponse } from './strive-quiz.models';
 import { StriveQuizService } from './strive-quiz.service';
 
