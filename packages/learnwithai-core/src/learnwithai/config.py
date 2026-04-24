@@ -13,7 +13,7 @@ from typing import Any, Literal
 from pydantic import AliasChoices, Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-Environment = Literal["development", "test", "production"]
+Environment = Literal["development", "test", "stage", "production"]
 
 ENV_FILE_NAME = ".env"
 
@@ -146,6 +146,10 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Reports whether the current environment is production."""
         return self.environment == "production"
+
+    def _parsed_rabbitmq_url(self) -> ParseResult:
+        """Returns the parsed effective RabbitMQ URL."""
+        return urlparse(self.effective_rabbitmq_url)
 
 
 @lru_cache

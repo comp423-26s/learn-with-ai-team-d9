@@ -9,9 +9,10 @@
 # This workflow is intentionally developer-focused. It:
 #   1. scales the app and worker deployments down to 0
 #   2. drops and recreates the application database in PostgreSQL
-#   3. runs a one-off bootstrap Job from the app image with a mounted bootstrap
-#      script from the local checkout that creates SQLModel tables and inserts
-#      a dummy user
+#   3. runs a one-off Job from the app image that invokes
+#      `packages/learnwithai-core/scripts/reset_database.py`, which (re)creates
+#      the SQLModel schema and seeds development data. The Job inherits the
+#      app deployment's ENVIRONMENT (must be `development` or `stage`).
 #   4. restores the app and worker replica counts
 #
 # Usage:
@@ -140,8 +141,8 @@ info "Target namespace: $NAMESPACE"
 APP_REPLICAS="$(get_replicas learnwithai-app)"
 WORKER_REPLICAS="$(get_replicas learnwithai-worker)"
 
-POSTGRESQL_USER="$(secret_value learnwithai-postgres-credentials POSTGRESQL_USER)"
-POSTGRESQL_DATABASE="$(secret_value learnwithai-postgres-credentials POSTGRESQL_DATABASE)"
+POSTGRESQL_USER="$(postgres_setting POSTGRESQL_USER)"
+POSTGRESQL_DATABASE="$(postgres_setting POSTGRESQL_DATABASE)"
 
 BOOTSTRAP_JOB="learnwithai-db-bootstrap-$(date +%s)"
 BOOTSTRAP_CONFIGMAP="${BOOTSTRAP_JOB}-script"
@@ -198,7 +199,8 @@ cat > "$JOB_MANIFEST" <<EOF
                         "imagePullPolicy": "Always",
                         "command": [
                             "/app/.venv/bin/python",
-                            "$BOOTSTRAP_SCRIPT_MOUNT_PATH"
+                            "-c",
+                            "import learnwithai.tables; from learnwithai.db import create_db_and_tables; create_db_and_tables(); print('Created tables.')"
                         ],
                         "envFrom": [
                             {
@@ -210,7 +212,7 @@ cat > "$JOB_MANIFEST" <<EOF
                         "env": [
                             {
                                 "name": "ENVIRONMENT",
-                                "value": "production"
+                                "value": "$APP_ENVIRONMENT"
                             }
                         ],
                         "volumeMounts": [
