@@ -224,7 +224,7 @@ cat > "$JOB_MANIFEST" <<EOF
                         "env": [
                             {
                                 "name": "ENVIRONMENT",
-                                "value": "production"
+                                "value": "$APP_ENVIRONMENT"
                             }
                         ]
                     }
