@@ -147,6 +147,17 @@ class Settings(BaseSettings):
         """Reports whether the current environment is production."""
         return self.environment == "production"
 
+    @computed_field
+    @property
+    def is_stage(self) -> bool:
+        """Reports whether the current environment is stage.
+
+        Stage behaves like production for serving the built SPA at `/`,
+        but otherwise mirrors development (dev-only auth-as routes mounted,
+        development frontend bundle, no required `.env` file).
+        """
+        return self.environment == "stage"
+
     def _parsed_rabbitmq_url(self) -> ParseResult:
         """Returns the parsed effective RabbitMQ URL."""
         return urlparse(self.effective_rabbitmq_url)

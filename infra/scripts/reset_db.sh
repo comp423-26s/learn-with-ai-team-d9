@@ -141,8 +141,21 @@ info "Target namespace: $NAMESPACE"
 APP_REPLICAS="$(get_replicas learnwithai-app)"
 WORKER_REPLICAS="$(get_replicas learnwithai-worker)"
 
-POSTGRESQL_USER="$(postgres_setting POSTGRESQL_USER)"
-POSTGRESQL_DATABASE="$(postgres_setting POSTGRESQL_DATABASE)"
+POSTGRESQL_USER="$(secret_value learnwithai-postgres-credentials POSTGRESQL_USER)"
+POSTGRESQL_DATABASE="$(secret_value learnwithai-postgres-credentials POSTGRESQL_DATABASE)"
+
+[ -n "$POSTGRESQL_USER" ] || fail "Could not read POSTGRESQL_USER from secret learnwithai-postgres-credentials in namespace $NAMESPACE."
+[ -n "$POSTGRESQL_DATABASE" ] || fail "Could not read POSTGRESQL_DATABASE from secret learnwithai-postgres-credentials in namespace $NAMESPACE."
+
+APP_ENVIRONMENT="$(oc get deployment/learnwithai-app -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[?(@.name=="app")].env[?(@.name=="ENVIRONMENT")].value}' 2>/dev/null || true)"
+if [ -z "$APP_ENVIRONMENT" ]; then
+    APP_ENVIRONMENT="production"
+fi
+case "$APP_ENVIRONMENT" in
+    development|stage) ;;
+    *) fail "reset_db.sh refuses to seed dev data in environment '$APP_ENVIRONMENT'. Re-deploy with --environment stage to enable seeding." ;;
+esac
+info "App deployment ENVIRONMENT=$APP_ENVIRONMENT"
 
 BOOTSTRAP_JOB="learnwithai-db-bootstrap-$(date +%s)"
 BOOTSTRAP_CONFIGMAP="${BOOTSTRAP_JOB}-script"
@@ -199,8 +212,7 @@ cat > "$JOB_MANIFEST" <<EOF
                         "imagePullPolicy": "Always",
                         "command": [
                             "/app/.venv/bin/python",
-                            "-c",
-                            "import learnwithai.tables; from learnwithai.db import create_db_and_tables; create_db_and_tables(); print('Created tables.')"
+                            "/app/packages/learnwithai-core/scripts/reset_database.py"
                         ],
                         "envFrom": [
                             {
@@ -212,14 +224,7 @@ cat > "$JOB_MANIFEST" <<EOF
                         "env": [
                             {
                                 "name": "ENVIRONMENT",
-                                "value": "$APP_ENVIRONMENT"
-                            }
-                        ],
-                        "volumeMounts": [
-                            {
-                                "name": "bootstrap-script",
-                                "mountPath": "/bootstrap",
-                                "readOnly": true
+                                "value": "production"
                             }
                         ]
                     }
