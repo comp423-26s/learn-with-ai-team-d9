@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, HTTPException, Path, UploadFile, File, Form
+from fastapi import APIRouter, Body, File, Form, HTTPException, Path, UploadFile
 from starlette.status import HTTP_201_CREATED
 
 from api.di import ActivityByPathDI, AuthenticatedUserDI, StriveServiceDI
@@ -92,9 +92,9 @@ def submit_quiz(
 def upload_pdf_and_generate_quiz(
     activity: ActivityByPathDI,
     file: Annotated[UploadFile, File(...)],
-    question_count: Annotated[int, Form(5)],
     subject: AuthenticatedUserDI,
     strive_svc: StriveServiceDI,
+    question_count: int = Form(5),
 ) -> QuizQuestionsResponse:
     """
     Accepts a PDF upload and synchronously generates a quiz from its text.
@@ -131,5 +131,5 @@ def upload_pdf_and_generate_quiz(
         raise HTTPException(status_code=404, detail="Strive activity not found")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to generate quiz from PDF")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to generate quiz from PDF: {exc}")
