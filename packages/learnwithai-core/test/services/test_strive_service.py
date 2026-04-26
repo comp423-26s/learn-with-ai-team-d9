@@ -191,6 +191,73 @@ def test_generate_questions_rejects_invalid_correct_choice_index() -> None:
             assert "invalid correct choice index" in str(exc)
 
 
+def test_generate_questions_uses_source_aware_prompt() -> None:
+    svc = StriveService()
+    mock_completion = MagicMock()
+    mock_completion.choices[
+        0
+    ].message.content = (
+        '[{"question": "Q", "choices": ["a", "b", "c", "d"], "correct_choice_index": 0, "explanation": "x"}]'
+    )
+
+    with patch.object(svc.client.chat.completions, "create", return_value=mock_completion) as mock_create:
+        result = svc._generate_questions_with_llm(1, source_excerpt="Functions return values.")
+
+    assert len(result) == 1
+    prompt = mock_create.call_args.kwargs["messages"][1]["content"]
+    assert "Base questions and answers on the SOURCE CONTENT below." in prompt
+    assert "Functions return values." in prompt
+
+
+def test_generate_questions_without_sources_uses_backup_prompt() -> None:
+    svc = StriveService()
+    mock_completion = MagicMock()
+    mock_completion.choices[
+        0
+    ].message.content = (
+        '[{"question": "Q", "choices": ["a", "b", "c", "d"], "correct_choice_index": 0, "explanation": "x"}]'
+    )
+
+    with patch.object(svc.client.chat.completions, "create", return_value=mock_completion) as mock_create:
+        result = svc._generate_questions_with_llm(1, source_excerpt="")
+
+    assert len(result) == 1
+    prompt = mock_create.call_args.kwargs["messages"][1]["content"]
+    assert "beginner-level Python multiple-choice questions" in prompt
+    assert "SOURCE CONTENT" not in prompt
+
+
+def test_extract_text_from_pdf_bytes_returns_empty_when_no_text_fragments() -> None:
+    svc = StriveService()
+
+    pdf_bytes = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n"
+    extracted = svc._extract_text_from_pdf_bytes(pdf_bytes)
+
+    assert extracted == ""
+
+
+def test_extract_text_from_pdf_bytes_breaks_and_truncates_at_max_chars() -> None:
+    svc = StriveService()
+
+    # Multiple TJ fragments ensure the loop can hit the early-break branch.
+    stream_payload = "(aaaaa) TJ\n(bbbbb) TJ\n(ccccc) TJ\n(dddddd) TJ\n"
+    pdf_like = f"stream\n{stream_payload}endstream\n".encode("latin-1")
+
+    extracted = svc._extract_text_from_pdf_bytes(pdf_like, max_chars=11)
+
+    assert extracted == "aaaaa bbbbb"
+
+
+def test_extract_text_from_pdf_bytes_reads_multiple_streams_when_under_limit() -> None:
+    svc = StriveService()
+
+    pdf_like = ("stream\n(hello) TJ\nendstream\nstream\n(world) TJ\nendstream\n").encode("latin-1")
+
+    extracted = svc._extract_text_from_pdf_bytes(pdf_like, max_chars=100)
+
+    assert extracted == "hello world"
+
+
 def test_reusable_submission_filters_mismatched_metadata() -> None:
     svc = StriveService()
     subject = cast(User, type("U", (), {"pid": 456})())
@@ -334,9 +401,12 @@ def test_generate_quiz_from_pdf_success(tmp_path: Any) -> None:
     with (
         patch("learnwithai.services.strive_service.os.makedirs"),
         patch("builtins.open", MagicMock()),
-        patch.object(svc, "_generate_questions_with_llm", return_value=questions),
+        patch.object(svc, "_extract_text_from_pdf_bytes", return_value="A source excerpt."),
+        patch.object(svc, "_generate_questions_with_llm", return_value=questions) as gen_mock,
     ):
         result = svc.generate_quiz_from_pdf(subject=subject, activity=activity, pdf_bytes=pdf_bytes, question_count=3)
+
+    gen_mock.assert_called_once_with(qcount=3, source_excerpt="A source excerpt.")
 
     assert result["student_pid"] == 77
     assert result["activity_id"] == 55

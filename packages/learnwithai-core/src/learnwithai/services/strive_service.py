@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -123,9 +124,46 @@ class StriveService:
             "]"
         )
 
-    def _generate_questions_with_llm(self, qcount: int) -> List[dict]:
+    def _build_source_aware_llm_prompt(self, qcount: int, source_excerpt: str) -> str:
+        """Build a concise prompt grounded in uploaded source content."""
+        return (
+            f"Generate exactly {qcount} beginner-level Python multiple-choice questions for students.\n"
+            "Base questions and answers on the SOURCE CONTENT below.\n"
+            "If needed, infer simple context but do not contradict the source.\n"
+            "Each question must have exactly 4 answer choices and one correct answer.\n"
+            "Keep explanations brief (one sentence).\n"
+            "Return ONLY valid JSON as an array with schema: "
+            '[{"question":"string","choices":["string","string","string","string"],"correct_choice_index":0,"explanation":"string"}]\n'
+            "SOURCE CONTENT:\n"
+            f"{source_excerpt}"
+        )
+
+    def _extract_text_from_pdf_bytes(self, pdf_bytes: bytes, max_chars: int = 3000) -> str:
+        """Extract a best-effort text snippet from PDF bytes without external dependencies."""
+        decoded = pdf_bytes.decode("latin-1", errors="ignore")
+        streams = re.findall(r"stream\r?\n(.*?)\r?\nendstream", decoded, flags=re.DOTALL)
+
+        chunks: list[str] = []
+        for stream in streams:
+            # Heuristic extraction of literal text fragments commonly used in PDF content streams.
+            chunks.extend(re.findall(r"\(([^()]*)\)\s*T[Jj]", stream))
+            if len(" ".join(chunks)) >= max_chars:
+                break
+
+        text = " ".join(chunk.strip() for chunk in chunks if chunk.strip())
+        text = re.sub(r"\s+", " ", text).strip()
+
+        if not text:
+            return ""
+        return text[:max_chars]
+
+    def _generate_questions_with_llm(self, qcount: int, source_excerpt: str | None = None) -> List[dict]:
         """Generate quiz questions with the LLM and normalize them into app format."""
-        prompt = self._build_llm_prompt(qcount=qcount)
+        prompt = (
+            self._build_source_aware_llm_prompt(qcount=qcount, source_excerpt=source_excerpt)
+            if source_excerpt
+            else self._build_llm_prompt(qcount=qcount)
+        )
 
         last_error: Exception | None = None
 
@@ -314,12 +352,14 @@ class StriveService:
         with open(path, "wb") as fh:
             fh.write(pdf_bytes)
 
+        source_excerpt = self._extract_text_from_pdf_bytes(pdf_bytes)
+
         # Try to generate questions using the existing LLM helper. If the
         # environment is not configured for OpenAI (no API key or network),
         # fall back to a simple deterministic placeholder set so the API
         # remains usable in dev environments.
         try:
-            questions = self._generate_questions_with_llm(qcount=question_count)
+            questions = self._generate_questions_with_llm(qcount=question_count, source_excerpt=source_excerpt)
         except Exception:
             questions = []
             for i in range(1, question_count + 1):
