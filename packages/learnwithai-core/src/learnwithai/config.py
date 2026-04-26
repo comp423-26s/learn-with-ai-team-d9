@@ -158,10 +158,6 @@ class Settings(BaseSettings):
         """
         return self.environment == "stage"
 
-    def _parsed_rabbitmq_url(self) -> ParseResult:
-        """Returns the parsed effective RabbitMQ URL."""
-        return urlparse(self.effective_rabbitmq_url)
-
 
 @lru_cache
 def get_settings() -> Settings:
