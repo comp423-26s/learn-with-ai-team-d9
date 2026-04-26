@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import zlib
 from datetime import datetime, timezone
 from itertools import count
 from typing import Any, cast
@@ -191,6 +192,104 @@ def test_generate_questions_rejects_invalid_correct_choice_index() -> None:
             assert "invalid correct choice index" in str(exc)
 
 
+def test_generate_questions_uses_source_aware_prompt() -> None:
+    svc = StriveService()
+    mock_completion = MagicMock()
+    mock_completion.choices[
+        0
+    ].message.content = (
+        '[{"question": "Q", "choices": ["a", "b", "c", "d"], "correct_choice_index": 0, "explanation": "x"}]'
+    )
+
+    with patch.object(svc.client.chat.completions, "create", return_value=mock_completion) as mock_create:
+        result = svc._generate_questions_with_llm(1, source_excerpt="Functions return values.")
+
+    assert len(result) == 1
+    prompt = mock_create.call_args.kwargs["messages"][1]["content"]
+    assert "Base questions and answers on the SOURCE CONTENT below." in prompt
+    assert "Functions return values." in prompt
+
+
+def test_generate_questions_without_sources_uses_backup_prompt() -> None:
+    svc = StriveService()
+    mock_completion = MagicMock()
+    mock_completion.choices[
+        0
+    ].message.content = (
+        '[{"question": "Q", "choices": ["a", "b", "c", "d"], "correct_choice_index": 0, "explanation": "x"}]'
+    )
+
+    with patch.object(svc.client.chat.completions, "create", return_value=mock_completion) as mock_create:
+        result = svc._generate_questions_with_llm(1, source_excerpt="")
+
+    assert len(result) == 1
+    prompt = mock_create.call_args.kwargs["messages"][1]["content"]
+    assert "beginner-level Python multiple-choice questions" in prompt
+    assert "SOURCE CONTENT" not in prompt
+
+
+def test_extract_text_from_pdf_bytes_returns_empty_when_no_text_fragments() -> None:
+    svc = StriveService()
+
+    pdf_bytes = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n"
+    extracted = svc._extract_text_from_pdf_bytes(pdf_bytes)
+
+    assert extracted == ""
+
+
+def test_extract_text_from_pdf_bytes_breaks_and_truncates_at_max_chars() -> None:
+    svc = StriveService()
+
+    # Multiple TJ fragments ensure the loop can hit the early-break branch.
+    stream_payload = "(aaaaa) TJ\n(bbbbb) TJ\n(ccccc) TJ\n(dddddd) TJ\n"
+    pdf_like = f"stream\n{stream_payload}endstream\n".encode("latin-1")
+
+    extracted = svc._extract_text_from_pdf_bytes(pdf_like, max_chars=11)
+
+    assert extracted == "aaaaa bbbbb"
+
+
+def test_extract_text_from_pdf_bytes_reads_multiple_streams_when_under_limit() -> None:
+    svc = StriveService()
+
+    pdf_like = ("stream\n(hello) TJ\nendstream\nstream\n(world) TJ\nendstream\n").encode("latin-1")
+
+    extracted = svc._extract_text_from_pdf_bytes(pdf_like, max_chars=100)
+
+    assert extracted == "hello world"
+
+
+def test_extract_text_from_pdf_bytes_unescapes_literal_sequences() -> None:
+    svc = StriveService()
+
+    pdf_like = (r"stream\n(Hello\ \(world\)\nline) Tj\nendstream\n").encode("latin-1")
+
+    extracted = svc._extract_text_from_pdf_bytes(pdf_like, max_chars=200)
+
+    assert extracted == "Hello (world) line"
+
+
+def test_extract_text_from_pdf_bytes_reads_hex_text_tokens() -> None:
+    svc = StriveService()
+
+    pdf_like = b"stream\n<48656C6C6F> Tj\nendstream\n"
+
+    extracted = svc._extract_text_from_pdf_bytes(pdf_like, max_chars=200)
+
+    assert extracted == "Hello"
+
+
+def test_extract_text_from_pdf_bytes_reads_flate_streams() -> None:
+    svc = StriveService()
+
+    compressed_stream = zlib.compress(b"(Compressed text) Tj\n")
+    pdf_like = b"stream\n" + compressed_stream + b"\nendstream\n"
+
+    extracted = svc._extract_text_from_pdf_bytes(pdf_like, max_chars=200)
+
+    assert extracted == "Compressed text"
+
+
 def test_reusable_submission_filters_mismatched_metadata() -> None:
     svc = StriveService()
     subject = cast(User, type("U", (), {"pid": 456})())
@@ -334,9 +433,12 @@ def test_generate_quiz_from_pdf_success(tmp_path: Any) -> None:
     with (
         patch("learnwithai.services.strive_service.os.makedirs"),
         patch("builtins.open", MagicMock()),
-        patch.object(svc, "_generate_questions_with_llm", return_value=questions),
+        patch.object(svc, "_extract_text_from_pdf_bytes", return_value="A source excerpt."),
+        patch.object(svc, "_generate_questions_with_llm", return_value=questions) as gen_mock,
     ):
         result = svc.generate_quiz_from_pdf(subject=subject, activity=activity, pdf_bytes=pdf_bytes, question_count=3)
+
+    gen_mock.assert_called_once_with(qcount=3, source_excerpt="A source excerpt.")
 
     assert result["student_pid"] == 77
     assert result["activity_id"] == 55
@@ -394,3 +496,171 @@ def test_get_and_submit_reject_other_student() -> None:
         raise AssertionError("expected PermissionError")
     except PermissionError:
         pass
+
+
+def test_extract_study_material_from_pdf_raises_when_no_text() -> None:
+    svc = StriveService()
+
+    with patch.object(svc, "_extract_text_from_pdf_bytes", return_value=""):
+        with pytest.raises(ValueError, match="Could not extract readable text from PDF"):
+            svc.extract_study_material_from_pdf(b"%PDF-1.4")
+
+
+def test_extract_study_material_from_pdf_calls_llm_helper() -> None:
+    svc = StriveService()
+    expected = {"title": "Study", "facts": ["A"]}
+
+    with (
+        patch.object(svc, "_extract_text_from_pdf_bytes", return_value="source text"),
+        patch.object(svc, "_extract_study_material_with_llm", return_value=expected) as helper,
+    ):
+        result = svc.extract_study_material_from_pdf(b"%PDF-1.4")
+
+    helper.assert_called_once_with("source text")
+    assert result == expected
+
+
+def test_extract_study_material_with_llm_retries_and_fails_on_invalid_json() -> None:
+    svc = StriveService()
+    mock_completion = MagicMock()
+    mock_completion.choices[0].message.content = "not-json"
+
+    with patch.object(svc.client.chat.completions, "create", side_effect=[mock_completion, mock_completion]):
+        with pytest.raises(ValueError, match="Study material extraction returned invalid JSON content"):
+            svc._extract_study_material_with_llm("source")
+
+
+def test_extract_study_material_with_llm_retries_after_normalize_error() -> None:
+    svc = StriveService()
+    mock_completion = MagicMock()
+    mock_completion.choices[0].message.content = "{}"
+
+    with (
+        patch.object(svc.client.chat.completions, "create", side_effect=[mock_completion, mock_completion]),
+        patch.object(
+            svc,
+            "_normalize_study_material_payload",
+            side_effect=[ValueError("bad payload"), {"title": "ok"}],
+        ) as normalize,
+    ):
+        result = svc._extract_study_material_with_llm("source")
+
+    assert result == {"title": "ok"}
+    assert normalize.call_count == 2
+
+
+def test_normalize_study_material_payload_rejects_non_object() -> None:
+    svc = StriveService()
+
+    with pytest.raises(ValueError, match="non-object"):
+        svc._normalize_study_material_payload([1, 2, 3], source_text="src")
+
+
+def test_normalize_study_material_payload_branches() -> None:
+    svc = StriveService()
+
+    # No summary/concepts/facts should fail validation.
+    with pytest.raises(ValueError, match="did not include usable study content"):
+        svc._normalize_study_material_payload(
+            {
+                "title": "",
+                "summary": "",
+                "learning_objectives": "not-a-list",
+                "key_terms": [123, {"term": "", "definition": "x"}],
+                "concepts": [123, {"name": "", "explanation": ""}],
+                "facts": [],
+                "examples": ["bad"],
+                "misconceptions": ["bad"],
+            },
+            source_text="source",
+        )
+
+    payload = svc._normalize_study_material_payload(
+        {
+            "title": "  ",
+            "summary": "  Some summary.  ",
+            "learning_objectives": ["  Understand loops  ", ""],
+            "key_terms": [
+                123,
+                {"term": " variable ", "definition": " storage value "},
+                {"term": "", "definition": "ignored"},
+            ],
+            "concepts": [
+                "bad",
+                {"name": "Loops", "explanation": "Repeat actions", "supporting_details": [" while ", ""]},
+                {"name": "", "explanation": "missing name"},
+            ],
+            "facts": ["  Fact 1  "],
+            "examples": [{"prompt": " Example ", "explanation": " Details "}],
+            "misconceptions": [{"misconception": "A", "correction": "B"}],
+        },
+        source_text="source text",
+    )
+
+    assert payload["title"] == "Uploaded study material"
+    assert payload["summary"] == "Some summary."
+    assert payload["learning_objectives"] == ["Understand loops"]
+    assert payload["key_terms"] == [{"term": "variable", "definition": "storage value"}]
+    assert payload["concepts"] == [{"name": "Loops", "explanation": "Repeat actions", "supporting_details": ["while"]}]
+    assert payload["facts"] == ["Fact 1"]
+
+
+def test_extract_text_from_pdf_bytes_uses_plaintext_fragments_fallback() -> None:
+    svc = StriveService()
+
+    pdf_like = (
+        "%PDF-1.4\n"
+        "1 0 obj\n"
+        "Tiny\n"
+        "This is a meaningful sentence for fallback extraction.\n"
+        "Another helpful sentence for quiz creation.\n"
+        "endobj\n"
+    ).encode("latin-1")
+
+    extracted = svc._extract_text_from_pdf_bytes(pdf_like, max_chars=300)
+
+    assert "meaningful sentence" in extracted
+    assert "helpful sentence" in extracted
+
+
+def test_decode_pdf_hex_text_branch_cases() -> None:
+    svc = StriveService()
+
+    assert svc._decode_pdf_hex_text("") == ""
+    assert svc._decode_pdf_hex_text("ZZ") == ""
+    assert svc._decode_pdf_hex_text("414") == "A@"
+    assert svc._decode_pdf_hex_text("FEFF00410042") == "AB"
+
+
+def test_helper_branch_returns_for_non_list_inputs() -> None:
+    svc = StriveService()
+
+    assert svc._clean_text(None) == ""
+    assert svc._normalize_named_items("not-a-list", name_key="term", text_key="definition") == []
+    assert svc._normalize_concepts("not-a-list") == []
+
+
+def test_extract_pdf_text_fragments_covers_array_and_direct_hex_paths() -> None:
+    svc = StriveService()
+
+    # Covers array literals/hex and direct hex Tj including non-appending decoded blank text.
+    content = "[(alpha) <4869>] TJ <4142> Tj <20> Tj"
+    fragments = svc._extract_pdf_text_fragments(content)
+
+    assert "alpha" in fragments
+    assert "Hi" in fragments
+    assert "AB" in fragments
+
+
+def test_extract_pdf_text_fragments_skips_whitespace_only_hex_chunks() -> None:
+    svc = StriveService()
+
+    fragments = svc._extract_pdf_text_fragments("[(keep) <20>] TJ")
+
+    assert fragments == ["keep"]
+
+
+def test_unescape_pdf_literal_octal_sequence() -> None:
+    svc = StriveService()
+
+    assert svc._unescape_pdf_literal(r"Letter:\040\141") == "Letter: a"
