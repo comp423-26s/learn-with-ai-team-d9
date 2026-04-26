@@ -1,0 +1,3 @@
+%PDF-1.4
+Memory diagrams are visual tools used in programming to represent how data is stored and organized in a computer’s memory during execution. They typically show variables, objects, and references, helping illustrate concepts like stack vs. heap memory, pointers, and how different parts of a program interact. By drawing boxes for variables and arrows for references, memory diagrams make it easier to understand how values change over time, how objects are shared or copied, and why certain bugs—like unintended side effects or null references—occur. They are especially useful when learning languages like Python or Java, where understanding how references work is key to writing correct programs.
+%%EOF

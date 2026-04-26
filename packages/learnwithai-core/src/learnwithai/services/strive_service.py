@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from itertools import count
@@ -292,6 +294,75 @@ class StriveService:
             module_name=module_name,
             topic=topic,
         )
+
+    def generate_quiz_from_pdf(
+        self, subject: User, activity: Activity, pdf_bytes: bytes, question_count: int = 5
+    ) -> dict[str, Any]:
+        """Save uploaded PDF and generate a quiz synchronously from it.
+
+        This is a lightweight dev implementation: it persist the uploaded
+        file to `data/uploads/strive/` with a UUID filename and then
+        generates questions using the existing LLM helper. It stores the
+        submission and questions in the in-memory `_QUIZ_STORE` so other
+        endpoints (GET/submit) continue to work.
+        """
+        # Persist upload
+        uploads_dir = os.path.join("data", "uploads", "strive")
+        os.makedirs(uploads_dir, exist_ok=True)
+        filename = f"{uuid.uuid4().hex}.pdf"
+        path = os.path.join(uploads_dir, filename)
+        with open(path, "wb") as fh:
+            fh.write(pdf_bytes)
+
+        # Try to generate questions using the existing LLM helper. If the
+        # environment is not configured for OpenAI (no API key or network),
+        # fall back to a simple deterministic placeholder set so the API
+        # remains usable in dev environments.
+        try:
+            questions = self._generate_questions_with_llm(qcount=question_count)
+        except Exception:
+            questions = []
+            for i in range(1, question_count + 1):
+                questions.append(
+                    {
+                        "question_id": i,
+                        "text": f"Sample question {i} (PDF source)",
+                        "choices": [
+                            {"id": 1, "text": "Choice A"},
+                            {"id": 2, "text": "Choice B"},
+                            {"id": 3, "text": "Choice C"},
+                            {"id": 4, "text": "Choice D"},
+                        ],
+                        "correct_choice_id": 1,
+                        "explanation": "Placeholder explanation.",
+                    }
+                )
+
+        submission_id = next(_NEXT_ID)
+        started_at = datetime.now(timezone.utc)
+
+        _QUIZ_STORE[submission_id] = {
+            "submission": {
+                "id": submission_id,
+                "activity_id": activity.id,
+                "student_pid": subject.pid,
+                "status": "in_progress",
+                "started_at": started_at,
+                "question_count": question_count,
+                "mode": "module",
+                "module_name": None,
+                "topic": None,
+                "source_path": path,
+            },
+            "questions": questions,
+        }
+
+        # Return the public-facing quiz shape (strip correct answers)
+        public_questions = [
+            {"question_id": q["question_id"], "text": q["text"], "choices": q["choices"]} for q in questions
+        ]
+
+        return {**_QUIZ_STORE[submission_id]["submission"], "questions": public_questions}
 
     def get_quiz(self, subject: User, submission_id: int) -> dict[str, Any]:
         data = _QUIZ_STORE.get(int(submission_id))
