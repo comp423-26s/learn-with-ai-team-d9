@@ -323,6 +323,53 @@ def test_reusable_submission_filters_mismatched_metadata() -> None:
     assert reusable["submission"]["id"] == 7
 
 
+def test_generate_quiz_from_pdf_success(tmp_path: Any) -> None:
+    svc = StriveService()
+    subject = cast(User, type("U", (), {"pid": 77})())
+    activity = cast(Activity, type("A", (), {"id": 55})())
+    pdf_bytes = b"%PDF-1.4 test"
+
+    questions = _mock_questions(3)
+
+    with (
+        patch("learnwithai.services.strive_service.os.makedirs"),
+        patch("builtins.open", MagicMock()),
+        patch.object(svc, "_generate_questions_with_llm", return_value=questions),
+    ):
+        result = svc.generate_quiz_from_pdf(subject=subject, activity=activity, pdf_bytes=pdf_bytes, question_count=3)
+
+    assert result["student_pid"] == 77
+    assert result["activity_id"] == 55
+    assert result["status"] == "in_progress"
+    assert result["question_count"] == 3
+    assert result["mode"] == "module"
+    assert len(result["questions"]) == 3
+    # public questions must not include correct_choice_id
+    for q in result["questions"]:
+        assert "correct_choice_id" not in q
+    assert result["id"] in strive_service_module._QUIZ_STORE
+
+
+def test_generate_quiz_from_pdf_llm_fallback(tmp_path: Any) -> None:
+    svc = StriveService()
+    subject = cast(User, type("U", (), {"pid": 88})())
+    activity = cast(Activity, type("A", (), {"id": 66})())
+    pdf_bytes = b"%PDF-1.4 test"
+
+    with (
+        patch("learnwithai.services.strive_service.os.makedirs"),
+        patch("builtins.open", MagicMock()),
+        patch.object(svc, "_generate_questions_with_llm", side_effect=RuntimeError("LLM down")),
+    ):
+        result = svc.generate_quiz_from_pdf(subject=subject, activity=activity, pdf_bytes=pdf_bytes, question_count=2)
+
+    assert result["question_count"] == 2
+    assert len(result["questions"]) == 2
+    for q in result["questions"]:
+        assert "PDF source" in q["text"]
+        assert len(q["choices"]) == 4
+
+
 def test_get_and_submit_reject_other_student() -> None:
     svc = StriveService()
     owner = cast(User, type("U", (), {"pid": 456})())

@@ -295,7 +295,9 @@ class StriveService:
             topic=topic,
         )
 
-    def generate_quiz_from_pdf(self, subject: User, activity: Activity, pdf_bytes: bytes, question_count: int = 5) -> dict[str, Any]:
+    def generate_quiz_from_pdf(
+        self, subject: User, activity: Activity, pdf_bytes: bytes, question_count: int = 5
+    ) -> dict[str, Any]:
         """Save uploaded PDF and generate a quiz synchronously from it.
 
         This is a lightweight dev implementation: it persist the uploaded
@@ -357,8 +359,7 @@ class StriveService:
 
         # Return the public-facing quiz shape (strip correct answers)
         public_questions = [
-            {"question_id": q["question_id"], "text": q["text"], "choices": q["choices"]}
-            for q in questions
+            {"question_id": q["question_id"], "text": q["text"], "choices": q["choices"]} for q in questions
         ]
 
         return {**_QUIZ_STORE[submission_id]["submission"], "questions": public_questions}
