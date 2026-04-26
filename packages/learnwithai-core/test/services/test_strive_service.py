@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import zlib
 from datetime import datetime, timezone
 from itertools import count
@@ -429,16 +430,24 @@ def test_generate_quiz_from_pdf_success(tmp_path: Any) -> None:
     pdf_bytes = b"%PDF-1.4 test"
 
     questions = _mock_questions(3)
+    study_material = {
+        "schema_version": 1,
+        "title": "Functions",
+        "facts": ["Functions can return values."],
+    }
 
     with (
         patch("learnwithai.services.strive_service.os.makedirs"),
         patch("builtins.open", MagicMock()),
-        patch.object(svc, "_extract_text_from_pdf_bytes", return_value="A source excerpt."),
+        patch.object(svc, "extract_study_material_from_pdf", return_value=study_material) as extract_mock,
         patch.object(svc, "_generate_questions_with_llm", return_value=questions) as gen_mock,
     ):
         result = svc.generate_quiz_from_pdf(subject=subject, activity=activity, pdf_bytes=pdf_bytes, question_count=3)
 
-    gen_mock.assert_called_once_with(qcount=3, source_excerpt="A source excerpt.")
+    extract_mock.assert_called_once_with(pdf_bytes)
+    gen_mock.assert_called_once()
+    assert gen_mock.call_args.kwargs["qcount"] == 3
+    assert json.loads(gen_mock.call_args.kwargs["source_excerpt"]) == study_material
 
     assert result["student_pid"] == 77
     assert result["activity_id"] == 55
@@ -461,6 +470,7 @@ def test_generate_quiz_from_pdf_llm_fallback(tmp_path: Any) -> None:
     with (
         patch("learnwithai.services.strive_service.os.makedirs"),
         patch("builtins.open", MagicMock()),
+        patch.object(svc, "extract_study_material_from_pdf", return_value={"facts": ["A"]}),
         patch.object(svc, "_generate_questions_with_llm", side_effect=RuntimeError("LLM down")),
     ):
         result = svc.generate_quiz_from_pdf(subject=subject, activity=activity, pdf_bytes=pdf_bytes, question_count=2)

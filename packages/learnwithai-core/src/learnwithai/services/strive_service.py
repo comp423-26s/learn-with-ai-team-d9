@@ -624,14 +624,14 @@ class StriveService:
         with open(path, "wb") as fh:
             fh.write(pdf_bytes)
 
-        source_excerpt = self._extract_text_from_pdf_bytes(pdf_bytes)
-
         # Try to generate questions using the existing LLM helper. If the
         # environment is not configured for OpenAI (no API key or network),
         # fall back to a simple deterministic placeholder set so the API
         # remains usable in dev environments.
         try:
-            questions = self._generate_questions_with_llm(qcount=question_count, source_excerpt=source_excerpt)
+            study_material = self.extract_study_material_from_pdf(pdf_bytes)
+            source_context = json.dumps(study_material, sort_keys=True)
+            questions = self._generate_questions_with_llm(qcount=question_count, source_excerpt=source_context)
         except Exception:
             questions = []
             for i in range(1, question_count + 1):
