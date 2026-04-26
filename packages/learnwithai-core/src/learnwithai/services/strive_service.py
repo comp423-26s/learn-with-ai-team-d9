@@ -333,6 +333,18 @@ class StriveService:
             if not chunks:
                 chunks.extend(self._extract_plaintext_fragments(decoded))
 
+    def _extract_text_from_pdf_bytes(self, pdf_bytes: bytes, max_chars: int = 3000) -> str:
+        """Extract a best-effort text snippet from PDF bytes without external dependencies."""
+        decoded = pdf_bytes.decode("latin-1", errors="ignore")
+        streams = re.findall(r"stream\r?\n(.*?)\r?\nendstream", decoded, flags=re.DOTALL)
+
+        chunks: list[str] = []
+        for stream in streams:
+            # Heuristic extraction of literal text fragments commonly used in PDF content streams.
+            chunks.extend(re.findall(r"\(([^()]*)\)\s*T[Jj]", stream))
+            if len(" ".join(chunks)) >= max_chars:
+                break
+
         text = " ".join(chunk.strip() for chunk in chunks if chunk.strip())
         text = re.sub(r"\s+", " ", text).strip()
 
@@ -624,6 +636,8 @@ class StriveService:
         with open(path, "wb") as fh:
             fh.write(pdf_bytes)
 
+        source_excerpt = self._extract_text_from_pdf_bytes(pdf_bytes)
+
         # Try to generate questions using the existing LLM helper. If the
         # environment is not configured for OpenAI (no API key or network),
         # fall back to a simple deterministic placeholder set so the API
@@ -632,6 +646,7 @@ class StriveService:
             study_material = self.extract_study_material_from_pdf(pdf_bytes)
             source_context = json.dumps(study_material, sort_keys=True)
             questions = self._generate_questions_with_llm(qcount=question_count, source_excerpt=source_context)
+            questions = self._generate_questions_with_llm(qcount=question_count, source_excerpt=source_excerpt)
         except Exception:
             questions = []
             for i in range(1, question_count + 1):
