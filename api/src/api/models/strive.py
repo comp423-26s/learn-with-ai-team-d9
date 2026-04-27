@@ -37,7 +37,7 @@ class QuizCreateRequest(BaseModel):
     question_count: int = Field(
         default=5,
         description="Number of multiple-choice questions to generate (1–10).",
-        example=5,
+        json_schema_extra={"example": 5},
         ge=1,
         le=10,
     )
@@ -48,19 +48,31 @@ class QuizCreateRequest(BaseModel):
 class QuizCreateResponse(BaseModel):
     """Response returned when a quiz submission is created."""
 
-    id: int = Field(..., description="Quiz submission id (numeric).", example=101)
-    activity_id: int = Field(..., description="Associated activity id.", example=42)
-    student_pid: int = Field(..., description="Owner student's pid.", example=730611076)
-    status: str = Field(..., description="Submission status: 'in_progress' or 'submitted'.", example="in_progress")
+    id: int = Field(..., description="Quiz submission id (numeric).", json_schema_extra={"example": 101})
+    activity_id: int = Field(..., description="Associated activity id.", json_schema_extra={"example": 42})
+    student_pid: int = Field(..., description="Owner student's pid.", json_schema_extra={"example": 730611076})
+    status: str = Field(
+        ...,
+        description="Submission status: 'in_progress' or 'submitted'.",
+        json_schema_extra={"example": "in_progress"},
+    )
     started_at: datetime = Field(
-        ..., description="UTC timestamp when quiz was started.", example="2026-04-15T12:00:00Z"
+        ..., description="UTC timestamp when quiz was started.", json_schema_extra={"example": "2026-04-15T12:00:00Z"}
     )
-    question_count: int = Field(..., description="Number of questions in the submission.", example=5)
-    mode: Literal["daily", "module"] = Field(..., description="Generation mode used.", example="daily")
+    question_count: int = Field(
+        ..., description="Number of questions in the submission.", json_schema_extra={"example": 5}
+    )
+    mode: Literal["daily", "module"] = Field(
+        ..., description="Generation mode used.", json_schema_extra={"example": "daily"}
+    )
     module_name: Optional[str] = Field(
-        default=None, description="Module name when mode='module'.", example="Module 2: Python Basics"
+        default=None,
+        description="Module name when mode='module'.",
+        json_schema_extra={"example": "Module 2: Python Basics"},
     )
-    topic: Optional[str] = Field(default=None, description="Topic focus for this quiz.", example="Functions")
+    topic: Optional[str] = Field(
+        default=None, description="Topic focus for this quiz.", json_schema_extra={"example": "Functions"}
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -68,8 +80,8 @@ class QuizCreateResponse(BaseModel):
 class ChoiceDTO(BaseModel):
     """Single multiple-choice option."""
 
-    id: int = Field(..., description="Choice id local to the question.", example=2)
-    text: str = Field(..., description="Display text for the choice.", example="def")
+    id: int = Field(..., description="Choice id local to the question.", json_schema_extra={"example": 2})
+    text: str = Field(..., description="Display text for the choice.", json_schema_extra={"example": "def"})
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -77,9 +89,13 @@ class ChoiceDTO(BaseModel):
 class QuizQuestionDTO(BaseModel):
     """Question returned to the frontend (no correct answer)."""
 
-    question_id: int = Field(..., description="Local question id within the submission.", example=1)
+    question_id: int = Field(
+        ..., description="Local question id within the submission.", json_schema_extra={"example": 1}
+    )
     text: str = Field(
-        ..., description="Question text shown to the student.", example="Which keyword defines a function in Python?"
+        ...,
+        description="Question text shown to the student.",
+        json_schema_extra={"example": "Which keyword defines a function in Python?"},
     )
     choices: List[ChoiceDTO] = Field(..., description="Ordered list of choices.")
 
@@ -89,15 +105,19 @@ class QuizQuestionDTO(BaseModel):
 class QuizQuestionsResponse(BaseModel):
     """Response for retrieving a quiz's questions (no answers included)."""
 
-    id: int = Field(..., description="Quiz submission id.", example=101)
-    activity_id: int = Field(..., description="Associated activity id.", example=42)
-    student_pid: int = Field(..., description="Owner student's pid.", example=730611076)
-    status: str = Field(..., description="Submission status.", example="in_progress")
-    mode: Literal["daily", "module"] = Field(..., description="Generation mode.", example="daily")
-    module_name: Optional[str] = Field(
-        default=None, description="Module name when mode='module'.", example="Module 2: Python Basics"
+    id: int = Field(..., description="Quiz submission id.", json_schema_extra={"example": 101})
+    activity_id: int = Field(..., description="Associated activity id.", json_schema_extra={"example": 42})
+    student_pid: int = Field(..., description="Owner student's pid.", json_schema_extra={"example": 730611076})
+    status: str = Field(..., description="Submission status.", json_schema_extra={"example": "in_progress"})
+    mode: Literal["daily", "module"] = Field(
+        ..., description="Generation mode.", json_schema_extra={"example": "daily"}
     )
-    topic: Optional[str] = Field(default=None, description="Topic focus.", example="Functions")
+    module_name: Optional[str] = Field(
+        default=None,
+        description="Module name when mode='module'.",
+        json_schema_extra={"example": "Module 2: Python Basics"},
+    )
+    topic: Optional[str] = Field(default=None, description="Topic focus.", json_schema_extra={"example": "Functions"})
     questions: List[QuizQuestionDTO] = Field(..., description="List of questions for the submission.")
 
     model_config = ConfigDict(from_attributes=True)
@@ -106,8 +126,8 @@ class QuizQuestionsResponse(BaseModel):
 class QuizAnswerDTO(BaseModel):
     """Single answer payload from the frontend when submitting a quiz."""
 
-    question_id: int = Field(..., description="Local question id being answered.", example=1)
-    selected_choice_id: int = Field(..., description="Selected choice id.", example=2)
+    question_id: int = Field(..., description="Local question id being answered.", json_schema_extra={"example": 1})
+    selected_choice_id: int = Field(..., description="Selected choice id.", json_schema_extra={"example": 2})
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -116,7 +136,9 @@ class QuizSubmitRequest(BaseModel):
     """Request body for submitting quiz answers."""
 
     answers: List[QuizAnswerDTO] = Field(
-        ..., description="List of answers for the submission.", example=[{"question_id": 1, "selected_choice_id": 2}]
+        ...,
+        description="List of answers for the submission.",
+        json_schema_extra={"example": [{"question_id": 1, "selected_choice_id": 2}]},
     )
 
     model_config = ConfigDict(from_attributes=True)
@@ -125,13 +147,19 @@ class QuizSubmitRequest(BaseModel):
 class QuizFeedbackDTO(BaseModel):
     """Per-question feedback returned after grading."""
 
-    question_id: int = Field(..., description="Question id.", example=1)
-    correct: bool = Field(..., description="Whether the submitted answer was correct.", example=True)
-    correct_choice_id: Optional[int] = Field(default=None, description="The correct choice id.", example=2)
+    question_id: int = Field(..., description="Question id.", json_schema_extra={"example": 1})
+    correct: bool = Field(
+        ..., description="Whether the submitted answer was correct.", json_schema_extra={"example": True}
+    )
+    correct_choice_id: Optional[int] = Field(
+        default=None,
+        description="The correct choice id.",
+        json_schema_extra={"example": 2},
+    )
     explanation: Optional[str] = Field(
         default=None,
         description="Short explanation for the correct answer.",
-        example="The `def` keyword declares a function.",
+        json_schema_extra={"example": "The `def` keyword declares a function."},
     )
 
     model_config = ConfigDict(from_attributes=True)
@@ -140,13 +168,13 @@ class QuizFeedbackDTO(BaseModel):
 class QuizSubmitResponse(BaseModel):
     """Response after grading a quiz submission."""
 
-    id: int = Field(..., description="Quiz submission id.", example=101)
-    score: float = Field(..., description="Score as percentage (0-100).", example=80.0)
-    correct_count: int = Field(..., description="Number of correct answers.", example=4)
-    total_count: int = Field(..., description="Total number of questions.", example=5)
+    id: int = Field(..., description="Quiz submission id.", json_schema_extra={"example": 101})
+    score: float = Field(..., description="Score as percentage (0-100).", json_schema_extra={"example": 80.0})
+    correct_count: int = Field(..., description="Number of correct answers.", json_schema_extra={"example": 4})
+    total_count: int = Field(..., description="Total number of questions.", json_schema_extra={"example": 5})
     feedback: List[QuizFeedbackDTO] = Field(..., description="Per-question feedback.")
     finished_at: datetime = Field(
-        ..., description="UTC timestamp when grading completed.", example="2026-04-15T12:05:00Z"
+        ..., description="UTC timestamp when grading completed.", json_schema_extra={"example": "2026-04-15T12:05:00Z"}
     )
 
     model_config = ConfigDict(from_attributes=True)

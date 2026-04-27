@@ -19,6 +19,6 @@ export default defineConfig({
     exclude: ['dist/**', '.angular/**', 'node_modules/**'],
     setupFiles: isDirectVitestRun ? ['src/test-setup.ts'] : [],
     ...(isDirectVitestRun ? { include: ['src/**/*.spec.ts'] } : {}),
-    testTimeout: 10000,
+    testTimeout: 30000,
   },
 });

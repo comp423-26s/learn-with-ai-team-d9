@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from itertools import count
 from typing import Any, cast
@@ -227,35 +228,70 @@ def test_generate_questions_without_sources_uses_backup_prompt() -> None:
     assert "SOURCE CONTENT" not in prompt
 
 
-def test_extract_text_from_pdf_bytes_returns_empty_when_no_text_fragments() -> None:
+def test_extract_study_material_from_pdf_returns_json_payload() -> None:
+    svc = StriveService()
+    reader = MagicMock()
+    reader.metadata = {"/Title": "  Functions  ", "/Empty": None}
+    reader.pages = [
+        MagicMock(extract_text=MagicMock(return_value="Functions\nreturn values.")),
+        MagicMock(extract_text=MagicMock(return_value="   ")),
+        MagicMock(extract_text=MagicMock(return_value="Loops repeat work.")),
+    ]
+
+    with patch("learnwithai.services.strive_service.PdfReader", return_value=reader):
+        extracted = svc.extract_study_material_from_pdf(b"%PDF-1.4 test")
+
+    assert extracted == {
+        "schema_version": 1,
+        "source_type": "pdf",
+        "page_count": 3,
+        "metadata": {"Title": "Functions", "Empty": ""},
+        "pages": [
+            {"page": 1, "text": "Functions return values."},
+            {"page": 2, "text": ""},
+            {"page": 3, "text": "Loops repeat work."},
+        ],
+        "text": "Functions return values. Loops repeat work.",
+    }
+
+
+def test_extract_study_material_from_pdf_truncates_combined_text() -> None:
+    svc = StriveService()
+    reader = MagicMock()
+    reader.metadata = None
+    reader.pages = [
+        MagicMock(extract_text=MagicMock(return_value="abc")),
+        MagicMock(extract_text=MagicMock(return_value="def")),
+    ]
+
+    with patch("learnwithai.services.strive_service.PdfReader", return_value=reader):
+        extracted = svc.extract_study_material_from_pdf(b"%PDF-1.4 test", max_chars=3)
+
+    assert extracted["metadata"] == {}
+    assert extracted["pages"] == [{"page": 1, "text": "abc"}, {"page": 2, "text": ""}]
+    assert extracted["text"] == "abc"
+
+
+def test_extract_study_material_from_pdf_raises_when_no_text() -> None:
+    svc = StriveService()
+    reader = MagicMock()
+    reader.metadata = {}
+    reader.pages = [
+        MagicMock(extract_text=MagicMock(return_value=None)),
+        MagicMock(extract_text=MagicMock(return_value="   ")),
+    ]
+
+    with patch("learnwithai.services.strive_service.PdfReader", return_value=reader):
+        with pytest.raises(ValueError, match="Could not extract readable text from PDF"):
+            svc.extract_study_material_from_pdf(b"%PDF-1.4 test")
+
+
+def test_extract_study_material_from_pdf_raises_when_pdf_cannot_be_read() -> None:
     svc = StriveService()
 
-    pdf_bytes = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n"
-    extracted = svc._extract_text_from_pdf_bytes(pdf_bytes)
-
-    assert extracted == ""
-
-
-def test_extract_text_from_pdf_bytes_breaks_and_truncates_at_max_chars() -> None:
-    svc = StriveService()
-
-    # Multiple TJ fragments ensure the loop can hit the early-break branch.
-    stream_payload = "(aaaaa) TJ\n(bbbbb) TJ\n(ccccc) TJ\n(dddddd) TJ\n"
-    pdf_like = f"stream\n{stream_payload}endstream\n".encode("latin-1")
-
-    extracted = svc._extract_text_from_pdf_bytes(pdf_like, max_chars=11)
-
-    assert extracted == "aaaaa bbbbb"
-
-
-def test_extract_text_from_pdf_bytes_reads_multiple_streams_when_under_limit() -> None:
-    svc = StriveService()
-
-    pdf_like = ("stream\n(hello) TJ\nendstream\nstream\n(world) TJ\nendstream\n").encode("latin-1")
-
-    extracted = svc._extract_text_from_pdf_bytes(pdf_like, max_chars=100)
-
-    assert extracted == "hello world"
+    with patch("learnwithai.services.strive_service.PdfReader", side_effect=RuntimeError("bad pdf")):
+        with pytest.raises(ValueError, match="Could not read PDF"):
+            svc.extract_study_material_from_pdf(b"not a pdf")
 
 
 def test_reusable_submission_filters_mismatched_metadata() -> None:
@@ -397,16 +433,20 @@ def test_generate_quiz_from_pdf_success(tmp_path: Any) -> None:
     pdf_bytes = b"%PDF-1.4 test"
 
     questions = _mock_questions(3)
+    study_material = {"schema_version": 1, "source_type": "pdf", "text": "A source excerpt."}
 
     with (
         patch("learnwithai.services.strive_service.os.makedirs"),
         patch("builtins.open", MagicMock()),
-        patch.object(svc, "_extract_text_from_pdf_bytes", return_value="A source excerpt."),
+        patch.object(svc, "extract_study_material_from_pdf", return_value=study_material) as extract_mock,
         patch.object(svc, "_generate_questions_with_llm", return_value=questions) as gen_mock,
     ):
         result = svc.generate_quiz_from_pdf(subject=subject, activity=activity, pdf_bytes=pdf_bytes, question_count=3)
 
-    gen_mock.assert_called_once_with(qcount=3, source_excerpt="A source excerpt.")
+    extract_mock.assert_called_once_with(pdf_bytes)
+    gen_mock.assert_called_once()
+    assert gen_mock.call_args.kwargs["qcount"] == 3
+    assert json.loads(gen_mock.call_args.kwargs["source_excerpt"]) == study_material
 
     assert result["student_pid"] == 77
     assert result["activity_id"] == 55
@@ -429,6 +469,7 @@ def test_generate_quiz_from_pdf_llm_fallback(tmp_path: Any) -> None:
     with (
         patch("learnwithai.services.strive_service.os.makedirs"),
         patch("builtins.open", MagicMock()),
+        patch.object(svc, "extract_study_material_from_pdf", return_value={"text": "A"}),
         patch.object(svc, "_generate_questions_with_llm", side_effect=RuntimeError("LLM down")),
     ):
         result = svc.generate_quiz_from_pdf(subject=subject, activity=activity, pdf_bytes=pdf_bytes, question_count=2)

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from io import BytesIO
 from itertools import count
 from typing import Any, List
 
@@ -13,6 +13,7 @@ from learnwithai.config import Settings, get_settings
 from learnwithai.tables.activity import Activity
 from learnwithai.tables.user import User
 from openai import OpenAI
+from PyPDF2 import PdfReader
 
 # Simple in-memory store for dev/testing so the endpoints work without DB migrations.
 _NEXT_ID = count(1)
@@ -138,24 +139,56 @@ class StriveService:
             f"{source_excerpt}"
         )
 
-    def _extract_text_from_pdf_bytes(self, pdf_bytes: bytes, max_chars: int = 3000) -> str:
-        """Extract a best-effort text snippet from PDF bytes without external dependencies."""
-        decoded = pdf_bytes.decode("latin-1", errors="ignore")
-        streams = re.findall(r"stream\r?\n(.*?)\r?\nendstream", decoded, flags=re.DOTALL)
+    def extract_study_material_from_pdf(self, pdf_bytes: bytes, max_chars: int = 12000) -> dict[str, Any]:
+        """Extract PDF content into a JSON-serializable study material payload.
 
-        chunks: list[str] = []
-        for stream in streams:
-            # Heuristic extraction of literal text fragments commonly used in PDF content streams.
-            chunks.extend(re.findall(r"\(([^()]*)\)\s*T[Jj]", stream))
-            if len(" ".join(chunks)) >= max_chars:
-                break
+        Args:
+            pdf_bytes: Raw bytes for the uploaded PDF.
+            max_chars: Maximum combined text length to keep in the payload.
 
-        text = " ".join(chunk.strip() for chunk in chunks if chunk.strip())
-        text = re.sub(r"\s+", " ", text).strip()
+        Returns:
+            A JSON-serializable dictionary containing PDF metadata and page text.
 
+        Raises:
+            ValueError: If the PDF cannot be read or contains no extractable text.
+        """
+        try:
+            reader = PdfReader(BytesIO(pdf_bytes))
+        except Exception as exc:
+            raise ValueError("Could not read PDF.") from exc
+
+        metadata: dict[str, str] = {}
+        for raw_key, raw_value in (reader.metadata or {}).items():
+            key = str(raw_key).lstrip("/")
+            value = "" if raw_value is None else " ".join(str(raw_value).split())
+            metadata[key] = value
+
+        pages: list[dict[str, Any]] = []
+        text_parts: list[str] = []
+        remaining_chars = max_chars
+
+        for page_number, page in enumerate(reader.pages, start=1):
+            page_text = " ".join((page.extract_text() or "").split())
+            if page_text and remaining_chars > 0:
+                page_text = page_text[:remaining_chars]
+                remaining_chars -= len(page_text)
+                text_parts.append(page_text)
+            else:
+                page_text = ""
+            pages.append({"page": page_number, "text": page_text})
+
+        text = " ".join(text_parts).strip()
         if not text:
-            return ""
-        return text[:max_chars]
+            raise ValueError("Could not extract readable text from PDF.")
+
+        return {
+            "schema_version": 1,
+            "source_type": "pdf",
+            "page_count": len(reader.pages),
+            "metadata": metadata,
+            "pages": pages,
+            "text": text,
+        }
 
     def _generate_questions_with_llm(self, qcount: int, source_excerpt: str | None = None) -> List[dict]:
         """Generate quiz questions with the LLM and normalize them into app format."""
@@ -352,7 +385,8 @@ class StriveService:
         with open(path, "wb") as fh:
             fh.write(pdf_bytes)
 
-        source_excerpt = self._extract_text_from_pdf_bytes(pdf_bytes)
+        study_material = self.extract_study_material_from_pdf(pdf_bytes)
+        source_excerpt = json.dumps(study_material, sort_keys=True)
 
         # Try to generate questions using the existing LLM helper. If the
         # environment is not configured for OpenAI (no API key or network),
