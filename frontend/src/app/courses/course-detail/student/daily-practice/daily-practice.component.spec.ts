@@ -259,6 +259,41 @@ describe('DailyPractice', () => {
     expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
   });
 
+  it('should restart quiz state to the first question', async () => {
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(1, 2);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    fixture.detectChanges();
+
+    const state = component as unknown as {
+      restart: () => void;
+      questionNumber: () => number;
+      answeredCount: () => number;
+      complete: { set: (value: boolean) => void };
+      submissionResult: { set: (value: QuizSubmitResponse | null) => void };
+    };
+
+    state.complete.set(true);
+    state.submissionResult.set(fakeSubmitResponse);
+    state.restart();
+    fixture.detectChanges();
+
+    expect(state.questionNumber()).toBe(1);
+    expect(state.answeredCount()).toBe(0);
+    expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
+  });
+
   it('should expose the empty loading state before data resolves', () => {
     const { fixture } = setup({ loadActivities: () => createDeferred<Activity[]>().promise });
     const component = fixture.componentInstance as DailyPractice;

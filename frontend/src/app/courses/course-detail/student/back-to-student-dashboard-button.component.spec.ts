@@ -43,7 +43,7 @@ describe('BackToStudentDashboardButton', () => {
   });
 
   it('should fall back to the courses list when course context is missing', () => {
-    const fixture = render(null);
+    const fixture = render('not-a-number');
 
     const anchor = fixture.nativeElement.querySelector('a') as HTMLAnchorElement;
     expect(anchor.getAttribute('href')).toContain('/courses');

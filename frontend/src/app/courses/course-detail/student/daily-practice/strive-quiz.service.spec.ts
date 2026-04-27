@@ -7,6 +7,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { provideHttpClient } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { StriveQuizService } from './strive-quiz.service';
+import { QuizQuestionsResponse } from './strive-quiz.models';
 
 describe('StriveQuizService', () => {
   let service: StriveQuizService;
@@ -101,5 +102,51 @@ describe('StriveQuizService', () => {
     });
 
     await expect(promise).resolves.toMatchObject({ id: 101, score: 100 });
+  });
+
+  it('should upload a PDF and request source-based quiz generation', async () => {
+    const file = new File(['pdf'], 'source.pdf', { type: 'application/pdf' });
+    const promise = service.uploadPdfAndGenerateQuiz(7, file, 5);
+
+    const request = httpTesting.expectOne('/api/activities/7/quizzes/upload-pdf');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toBeInstanceOf(FormData);
+
+    const formData = request.request.body as FormData;
+    expect(formData.get('question_count')).toBe('5');
+    const uploadedFile = formData.get('file');
+    expect(uploadedFile).toBeInstanceOf(File);
+    expect((uploadedFile as File).name).toBe('source.pdf');
+
+    request.flush({
+      id: 202,
+      activity_id: 7,
+      student_pid: 730611076,
+      status: 'in_progress',
+      mode: 'daily',
+      module_name: null,
+      topic: 'Source Topic',
+      questions: [],
+    });
+
+    await expect(promise).resolves.toMatchObject({ id: 202, mode: 'daily' });
+  });
+
+  it('should consume and clear the pending source quiz', () => {
+    const pendingQuiz: QuizQuestionsResponse = {
+      id: 303,
+      activity_id: 7,
+      student_pid: 730611076,
+      status: 'in_progress',
+      mode: 'daily',
+      module_name: null,
+      topic: 'Pending Source Quiz',
+      questions: [],
+    };
+
+    service.setPendingSourceQuiz(pendingQuiz);
+
+    expect(service.consumePendingSourceQuiz()).toEqual(pendingQuiz);
+    expect(service.consumePendingSourceQuiz()).toBeNull();
   });
 });
