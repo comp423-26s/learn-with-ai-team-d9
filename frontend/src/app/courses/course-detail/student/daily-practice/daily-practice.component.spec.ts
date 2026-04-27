@@ -121,10 +121,12 @@ describe('DailyPractice', () => {
     options: {
       activityList?: Activity[];
       routeCourseId?: string | null;
+      quizMode?: 'daily' | 'source';
       loadActivities?: () => Promise<Activity[]>;
       startQuizResponse?: QuizCreateResponse;
       getQuizResponse?: QuizQuestionsResponse;
       submitQuizResponse?: QuizSubmitResponse;
+      pendingSourceQuiz?: QuizQuestionsResponse | null;
     } = {},
   ) {
     const mockPageTitle = {
@@ -138,14 +140,21 @@ describe('DailyPractice', () => {
     };
 
     const routeCourseId = options.routeCourseId === undefined ? '1' : options.routeCourseId;
+    const quizMode = options.quizMode ?? 'daily';
 
     const mockQuizService = {
       startQuiz: vi.fn(() => Promise.resolve(options.startQuizResponse ?? fakeCreateResponse)),
       getQuiz: vi.fn(() => Promise.resolve(options.getQuizResponse ?? fakeQuestionsResponse)),
       submitQuiz: vi.fn(() => Promise.resolve(options.submitQuizResponse ?? fakeSubmitResponse)),
+      consumePendingSourceQuiz: vi.fn(() => options.pendingSourceQuiz ?? null),
     };
 
     const mockRoute = {
+      snapshot: {
+        queryParamMap: {
+          get: (key: string) => (key === 'mode' && quizMode === 'source' ? 'source' : null),
+        },
+      },
       parent: {
         parent: {
           snapshot: {
@@ -181,6 +190,35 @@ describe('DailyPractice', () => {
     expect(mockPageTitle.setTitle).toHaveBeenCalledWith("Today's Challenge");
     expect(mockQuizService.startQuiz).toHaveBeenCalled();
     expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
+  });
+
+  it('should load a source-based quiz from pending source context', async () => {
+    const { fixture, mockPageTitle, mockQuizService } = setup({
+      quizMode: 'source',
+      pendingSourceQuiz: fakeQuestionsResponse,
+    });
+    await flush();
+    fixture.detectChanges();
+
+    expect(mockPageTitle.setTitle).toHaveBeenCalledWith('Source-Based Quiz');
+    expect(mockQuizService.consumePendingSourceQuiz).toHaveBeenCalled();
+    expect(mockQuizService.startQuiz).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
+  });
+
+  it('should show an error when source-based quiz mode has no pending quiz', async () => {
+    const { fixture, mockQuizService } = setup({
+      quizMode: 'source',
+      pendingSourceQuiz: null,
+    });
+    await flush();
+    fixture.detectChanges();
+
+    expect(mockQuizService.consumePendingSourceQuiz).toHaveBeenCalled();
+    expect(mockQuizService.startQuiz).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain(
+      'No source-based quiz is ready. Add sources from the dashboard first.',
+    );
   });
 
   it('should move to next question after selecting an answer', async () => {

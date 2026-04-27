@@ -29,6 +29,8 @@ export class DailyPractice {
   private readonly route = inject(ActivatedRoute);
   private readonly activityService = inject(ActivityService);
   private readonly striveQuizService = inject(StriveQuizService);
+  private readonly sourceQuizMode = this.route.snapshot.queryParamMap.get('mode') === 'source';
+  protected readonly isSourceQuizMode = this.sourceQuizMode;
 
   protected readonly loading = signal(true);
   protected readonly submitting = signal(false);
@@ -70,7 +72,7 @@ export class DailyPractice {
   });
 
   constructor() {
-    this.titleService.setTitle("Today's Challenge");
+    this.titleService.setTitle(this.sourceQuizMode ? 'Source-Based Quiz' : "Today's Challenge");
     void this.loadChallenge();
   }
 
@@ -100,6 +102,11 @@ export class DailyPractice {
   }
 
   private async loadChallenge(): Promise<void> {
+    if (this.sourceQuizMode) {
+      this.loadSourceChallenge();
+      return;
+    }
+
     const courseId = Number(this.route.parent?.parent?.snapshot.paramMap.get('id'));
 
     if (Number.isNaN(courseId)) {
@@ -122,25 +129,40 @@ export class DailyPractice {
       });
       const quiz = await this.striveQuizService.getQuiz(createdQuiz.id);
 
-      if (quiz.questions.length === 0) {
-        this.setLoadError('The quiz service returned no questions.');
-        return;
-      }
-
-      this.quiz.set({
-        ...quiz,
-        questions: quiz.questions.map((question) => ({
-          ...question,
-          choices: question.choices.slice(0, 4),
-        })),
-      });
-      this.submissionResult.set(null);
-      this.message.set('');
+      this.applyLoadedQuiz(quiz);
     } catch {
       this.setLoadError('Unable to load challenge questions from the Strive quiz API.');
     } finally {
       this.loading.set(false);
     }
+  }
+
+  private loadSourceChallenge(): void {
+    const sourceQuiz = this.striveQuizService.consumePendingSourceQuiz();
+    if (sourceQuiz === null) {
+      this.setLoadError('No source-based quiz is ready. Add sources from the dashboard first.');
+      return;
+    }
+
+    this.applyLoadedQuiz(sourceQuiz);
+    this.loading.set(false);
+  }
+
+  private applyLoadedQuiz(quiz: QuizQuestionsResponse): void {
+    if (quiz.questions.length === 0) {
+      this.setLoadError('The quiz service returned no questions.');
+      return;
+    }
+
+    this.quiz.set({
+      ...quiz,
+      questions: quiz.questions.map((question) => ({
+        ...question,
+        choices: question.choices.slice(0, 4),
+      })),
+    });
+    this.submissionResult.set(null);
+    this.message.set('');
   }
 
   private async submitCurrentQuiz(): Promise<void> {
