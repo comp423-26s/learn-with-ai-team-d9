@@ -6,7 +6,13 @@
 <section class="space-y-6" aria-label="Today's challenge quiz">
   <mat-card appearance="outlined">
     <mat-card-content class="space-y-2">
-      <p class="text-sm font-medium tracking-[0.08em] uppercase opacity-80">Today's Challenge</p>
+      <p class="text-sm font-medium tracking-[0.08em] uppercase opacity-80">
+        @if (isSourceQuizMode) {
+          Source-Based Quiz
+        } @else {
+          Today's Challenge
+        }
+      </p>
       <p class="text-base opacity-90">Answer one question at a time and use Next to continue.</p>
       @if (message()) {
         <p class="text-sm opacity-75" role="status">{{ message() }}</p>
@@ -59,7 +65,7 @@
         @if (message()) {
           <p class="text-sm opacity-75" role="status">{{ message() }}</p>
         }
-        <button mat-flat-button color="primary" type="button" (click)="restart()">Try Again</button>
+        <app-back-to-student-dashboard-button />
       </mat-card-content>
     </mat-card>
   } @else if (currentQuestion(); as question) {

@@ -18,6 +18,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class StriveQuizService {
   private readonly http = inject(HttpClient);
+  private pendingSourceQuiz: QuizQuestionsResponse | null = null;
 
   /** Starts a new quiz submission for the given activity. */
   startQuiz(activityId: number, body: QuizCreateRequest): Promise<QuizCreateResponse> {
@@ -36,5 +37,35 @@ export class StriveQuizService {
     return firstValueFrom(
       this.http.post<QuizSubmitResponse>(`/api/quizzes/${quizSubmissionId}/submit`, body),
     );
+  }
+
+  /** Uploads a PDF source and generates questions grounded in that source. */
+  uploadPdfAndGenerateQuiz(
+    activityId: number,
+    file: File,
+    questionCount: number,
+  ): Promise<QuizQuestionsResponse> {
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+    formData.append('question_count', String(questionCount));
+
+    return firstValueFrom(
+      this.http.post<QuizQuestionsResponse>(
+        `/api/activities/${activityId}/quizzes/upload-pdf`,
+        formData,
+      ),
+    );
+  }
+
+  /** Stores a generated source-based quiz so the quiz page can consume it. */
+  setPendingSourceQuiz(quiz: QuizQuestionsResponse): void {
+    this.pendingSourceQuiz = quiz;
+  }
+
+  /** Returns and clears the most recently generated source-based quiz. */
+  consumePendingSourceQuiz(): QuizQuestionsResponse | null {
+    const pending = this.pendingSourceQuiz;
+    this.pendingSourceQuiz = null;
+    return pending;
   }
 }

@@ -3,18 +3,25 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { Component, ChangeDetectionStrategy, computed, inject } from '@angular/core';
+import { Component, ChangeDetectionStrategy, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
-import { RouterLink, RouterOutlet } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { PageTitleService } from '../../../page-title.service';
 import { LayoutNavigationService } from '../../../layout/layout-navigation.service';
 import { RECENT_DAILY_SCORES_STORAGE_KEY } from './daily-practice/daily-practice.component';
+import { ActivityService } from '../activities/activity.service';
+import { StriveQuizService } from './daily-practice/strive-quiz.service';
 
 type StudentTopLevelStat = {
   label: string;
   value: string;
   description: string;
+};
+
+type UploadedSource = {
+  name: string;
+  file: File;
 };
 
 /** Student-facing dashboard with a daily challenge call to action and mock performance stats. */
@@ -27,7 +34,21 @@ type StudentTopLevelStat = {
 export class StudentView {
   private titleService = inject(PageTitleService);
   private layoutNavigation = inject(LayoutNavigationService);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private activityService = inject(ActivityService);
+  private striveQuizService = inject(StriveQuizService);
   private readonly recentDailyScores = this.readRecentDailyScores();
+
+  protected readonly selectedSourceFile = signal<File | null>(null);
+  protected readonly uploadedSources = signal<UploadedSource[]>([]);
+  protected readonly sourceStatusMessage = signal('');
+  protected readonly creatingSourceQuiz = signal(false);
+
+  protected readonly selectedSourceFileName = computed(() => {
+    const file = this.selectedSourceFile();
+    return file ? file.name : null;
+  });
 
   protected readonly topLevelStats = computed<StudentTopLevelStat[]>(() => [
     {
@@ -43,13 +64,92 @@ export class StudentView {
     {
       label: 'Average',
       value: this.averageScoreLabel(),
-      description: 'Average score across recent daily challenges',
+      description: 'Average score across recent daily challenge attempts',
     },
   ]);
 
   constructor() {
     this.layoutNavigation.clearContext();
     this.titleService.setTitle('Student Dashboard');
+  }
+
+  protected isQuizRouteActive(): boolean {
+    return this.route.firstChild !== null;
+  }
+
+  protected onSourceFileSelected(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    const file = target.files?.[0] ?? null;
+
+    if (file === null) {
+      this.selectedSourceFile.set(null);
+      return;
+    }
+
+    if (file.type !== 'application/pdf') {
+      this.selectedSourceFile.set(null);
+      this.sourceStatusMessage.set('Please choose a PDF source file.');
+      return;
+    }
+
+    this.selectedSourceFile.set(file);
+    this.sourceStatusMessage.set('');
+  }
+
+  protected addSource(): void {
+    const file = this.selectedSourceFile();
+    if (file === null) {
+      this.sourceStatusMessage.set('Choose a PDF source before adding it.');
+      return;
+    }
+
+    this.uploadedSources.update((existing) => [{ name: file.name, file }, ...existing]);
+    this.sourceStatusMessage.set(`Added source "${file.name}".`);
+    this.selectedSourceFile.set(null);
+  }
+
+  protected async createSourceBasedQuiz(): Promise<void> {
+    const source = this.uploadedSources()[0] ?? null;
+    if (source === null) {
+      this.sourceStatusMessage.set('Add at least one source before creating a source-based quiz.');
+      return;
+    }
+
+    const courseId = Number(this.route.parent?.snapshot.paramMap.get('id'));
+    if (Number.isNaN(courseId)) {
+      this.sourceStatusMessage.set('Unable to resolve course context for source upload.');
+      return;
+    }
+
+    this.creatingSourceQuiz.set(true);
+    this.sourceStatusMessage.set('');
+
+    try {
+      const activities = await this.activityService.list(courseId);
+      const quizActivity = activities[0] ?? null;
+
+      if (quizActivity === null) {
+        this.sourceStatusMessage.set('No activity is available for source-aware quiz generation.');
+        return;
+      }
+
+      const quiz = await this.striveQuizService.uploadPdfAndGenerateQuiz(
+        quizActivity.id,
+        source.file,
+        5,
+      );
+
+      this.striveQuizService.setPendingSourceQuiz(quiz);
+      this.sourceStatusMessage.set(`Created a 5-question source-based quiz from "${source.name}".`);
+      await this.router.navigate(['daily-practice'], {
+        relativeTo: this.route,
+        queryParams: { mode: 'source' },
+      });
+    } catch {
+      this.sourceStatusMessage.set('Unable to add source context right now. Please try again.');
+    } finally {
+      this.creatingSourceQuiz.set(false);
+    }
   }
 
   private averageScoreLabel(): string {

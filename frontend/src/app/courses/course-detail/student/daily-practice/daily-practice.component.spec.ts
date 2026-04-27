@@ -121,10 +121,12 @@ describe('DailyPractice', () => {
     options: {
       activityList?: Activity[];
       routeCourseId?: string | null;
+      quizMode?: 'daily' | 'source';
       loadActivities?: () => Promise<Activity[]>;
       startQuizResponse?: QuizCreateResponse;
       getQuizResponse?: QuizQuestionsResponse;
       submitQuizResponse?: QuizSubmitResponse;
+      pendingSourceQuiz?: QuizQuestionsResponse | null;
     } = {},
   ) {
     const mockPageTitle = {
@@ -138,14 +140,21 @@ describe('DailyPractice', () => {
     };
 
     const routeCourseId = options.routeCourseId === undefined ? '1' : options.routeCourseId;
+    const quizMode = options.quizMode ?? 'daily';
 
     const mockQuizService = {
       startQuiz: vi.fn(() => Promise.resolve(options.startQuizResponse ?? fakeCreateResponse)),
       getQuiz: vi.fn(() => Promise.resolve(options.getQuizResponse ?? fakeQuestionsResponse)),
       submitQuiz: vi.fn(() => Promise.resolve(options.submitQuizResponse ?? fakeSubmitResponse)),
+      consumePendingSourceQuiz: vi.fn(() => options.pendingSourceQuiz ?? null),
     };
 
     const mockRoute = {
+      snapshot: {
+        queryParamMap: {
+          get: (key: string) => (key === 'mode' && quizMode === 'source' ? 'source' : null),
+        },
+      },
       parent: {
         parent: {
           snapshot: {
@@ -183,6 +192,35 @@ describe('DailyPractice', () => {
     expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
   });
 
+  it('should load a source-based quiz from pending source context', async () => {
+    const { fixture, mockPageTitle, mockQuizService } = setup({
+      quizMode: 'source',
+      pendingSourceQuiz: fakeQuestionsResponse,
+    });
+    await flush();
+    fixture.detectChanges();
+
+    expect(mockPageTitle.setTitle).toHaveBeenCalledWith('Source-Based Quiz');
+    expect(mockQuizService.consumePendingSourceQuiz).toHaveBeenCalled();
+    expect(mockQuizService.startQuiz).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
+  });
+
+  it('should show an error when source-based quiz mode has no pending quiz', async () => {
+    const { fixture, mockQuizService } = setup({
+      quizMode: 'source',
+      pendingSourceQuiz: null,
+    });
+    await flush();
+    fixture.detectChanges();
+
+    expect(mockQuizService.consumePendingSourceQuiz).toHaveBeenCalled();
+    expect(mockQuizService.startQuiz).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain(
+      'No source-based quiz is ready. Add sources from the dashboard first.',
+    );
+  });
+
   it('should move to next question after selecting an answer', async () => {
     const { fixture } = setup();
     await flush();
@@ -218,6 +256,41 @@ describe('DailyPractice', () => {
     ).onNext();
     fixture.detectChanges();
 
+    expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
+  });
+
+  it('should restart quiz state to the first question', async () => {
+    const { fixture } = setup();
+    await flush();
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as DailyPractice;
+
+    (
+      component as unknown as { selectChoice: (questionId: number, choiceId: number) => void }
+    ).selectChoice(1, 2);
+    await (
+      component as unknown as {
+        onNext: () => Promise<void>;
+      }
+    ).onNext();
+    fixture.detectChanges();
+
+    const state = component as unknown as {
+      restart: () => void;
+      questionNumber: () => number;
+      answeredCount: () => number;
+      complete: { set: (value: boolean) => void };
+      submissionResult: { set: (value: QuizSubmitResponse | null) => void };
+    };
+
+    state.complete.set(true);
+    state.submissionResult.set(fakeSubmitResponse);
+    state.restart();
+    fixture.detectChanges();
+
+    expect(state.questionNumber()).toBe(1);
+    expect(state.answeredCount()).toBe(0);
     expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
   });
 
@@ -323,16 +396,12 @@ describe('DailyPractice', () => {
       'A dictionary stores key-value pairs in Python.',
     );
 
-    const restartButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find(
-      (button) => (button as HTMLButtonElement).textContent?.includes('Try Again'),
-    ) as HTMLButtonElement | undefined;
+    const restartButton = fixture.nativeElement.querySelector(
+      'app-back-to-student-dashboard-button a',
+    ) as HTMLAnchorElement | null;
 
     expect(restartButton).toBeTruthy();
-    restartButton?.click();
-    fixture.detectChanges();
-
-    expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
-    expect(fixture.nativeElement.textContent).not.toContain('Challenge complete');
+    expect(restartButton?.textContent).toContain('Back to Student Dashboard');
   });
 
   it('should show an error when no course activities are available', async () => {
