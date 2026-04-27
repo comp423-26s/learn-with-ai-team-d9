@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import uuid
-import zlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from io import BytesIO
 from itertools import count
 from typing import Any, List
 
@@ -14,6 +13,7 @@ from learnwithai.config import Settings, get_settings
 from learnwithai.tables.activity import Activity
 from learnwithai.tables.user import User
 from openai import OpenAI
+from PyPDF2 import PdfReader
 
 # Simple in-memory store for dev/testing so the endpoints work without DB migrations.
 _NEXT_ID = count(1)
@@ -139,295 +139,56 @@ class StriveService:
             f"{source_excerpt}"
         )
 
-    def extract_study_material_from_pdf(self, pdf_bytes: bytes) -> dict[str, Any]:
-        """Extract reusable study material JSON from uploaded PDF bytes.
-
-        The returned payload is intentionally quiz-agnostic. It captures the
-        concepts, terms, facts, and examples that a later quiz generator can
-        consume without re-reading the PDF.
+    def extract_study_material_from_pdf(self, pdf_bytes: bytes, max_chars: int = 12000) -> dict[str, Any]:
+        """Extract PDF content into a JSON-serializable study material payload.
 
         Args:
             pdf_bytes: Raw bytes for the uploaded PDF.
+            max_chars: Maximum combined text length to keep in the payload.
 
         Returns:
-            A normalized study-material JSON payload.
+            A JSON-serializable dictionary containing PDF metadata and page text.
 
         Raises:
-            ValueError: If no text can be extracted or the LLM returns invalid
-                structured content.
+            ValueError: If the PDF cannot be read or contains no extractable text.
         """
-        source_text = self._extract_text_from_pdf_bytes(pdf_bytes, max_chars=12000)
-        if not source_text:
+        try:
+            reader = PdfReader(BytesIO(pdf_bytes))
+        except Exception as exc:
+            raise ValueError("Could not read PDF.") from exc
+
+        metadata: dict[str, str] = {}
+        for raw_key, raw_value in (reader.metadata or {}).items():
+            key = str(raw_key).lstrip("/")
+            value = "" if raw_value is None else " ".join(str(raw_value).split())
+            metadata[key] = value
+
+        pages: list[dict[str, Any]] = []
+        text_parts: list[str] = []
+        remaining_chars = max_chars
+
+        for page_number, page in enumerate(reader.pages, start=1):
+            page_text = " ".join((page.extract_text() or "").split())
+            if page_text and remaining_chars > 0:
+                page_text = page_text[:remaining_chars]
+                remaining_chars -= len(page_text)
+                text_parts.append(page_text)
+            else:
+                page_text = ""
+            pages.append({"page": page_number, "text": page_text})
+
+        text = " ".join(text_parts).strip()
+        if not text:
             raise ValueError("Could not extract readable text from PDF.")
 
-        return self._extract_study_material_with_llm(source_text)
-
-    def _build_study_material_extraction_prompt(self, source_text: str) -> str:
-        """Build a prompt that turns source text into quiz-ready study JSON."""
-        return (
-            "Extract structured study material from the SOURCE CONTENT below.\n"
-            "Only include information supported by the source. Do not invent facts.\n"
-            "Write for beginner programming students.\n"
-            "Return ONLY valid JSON as one object with this schema:\n"
-            "{\n"
-            '  "title": "short source title",\n'
-            '  "summary": "2-4 sentence source summary",\n'
-            '  "learning_objectives": ["objective students should be able to do"],\n'
-            '  "key_terms": [{"term": "string", "definition": "string"}],\n'
-            '  "concepts": [{"name": "string", "explanation": "string", "supporting_details": ["string"]}],\n'
-            '  "facts": ["atomic fact useful for quiz generation"],\n'
-            '  "examples": [{"prompt": "source-grounded example or scenario", "explanation": "string"}],\n'
-            '  "misconceptions": [{"misconception": "string", "correction": "string"}]\n'
-            "}\n"
-            "Use empty arrays when a category is not present in the source.\n"
-            "SOURCE CONTENT:\n"
-            f"{source_text}"
-        )
-
-    def _extract_study_material_with_llm(self, source_text: str) -> dict[str, Any]:
-        """Ask the LLM to produce and validate a study-material JSON object."""
-        prompt = self._build_study_material_extraction_prompt(source_text)
-        last_error: Exception | None = None
-
-        for _ in range(2):
-            response = self.client.chat.completions.create(
-                model=self.settings.openai_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You extract source-grounded educational study material and return strict JSON only."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            )
-
-            content = response.choices[0].message.content or ""
-
-            try:
-                parsed = json.loads(content)
-            except json.JSONDecodeError as exc:
-                last_error = exc
-                continue
-
-            try:
-                return self._normalize_study_material_payload(parsed, source_text=source_text)
-            except ValueError as exc:
-                last_error = exc
-
-        raise ValueError("Study material extraction returned invalid JSON content.") from last_error
-
-    def _normalize_study_material_payload(self, payload: Any, *, source_text: str) -> dict[str, Any]:
-        """Normalize LLM output into the study-material contract."""
-        if not isinstance(payload, dict):
-            raise ValueError("Study material extraction returned a non-object payload.")
-
-        material = {
+        return {
             "schema_version": 1,
-            "title": self._clean_text(payload.get("title")) or "Uploaded study material",
-            "summary": self._clean_text(payload.get("summary")),
-            "learning_objectives": self._clean_text_list(payload.get("learning_objectives")),
-            "key_terms": self._normalize_named_items(
-                payload.get("key_terms"),
-                name_key="term",
-                text_key="definition",
-            ),
-            "concepts": self._normalize_concepts(payload.get("concepts")),
-            "facts": self._clean_text_list(payload.get("facts")),
-            "examples": self._normalize_named_items(
-                payload.get("examples"),
-                name_key="prompt",
-                text_key="explanation",
-            ),
-            "misconceptions": self._normalize_named_items(
-                payload.get("misconceptions"),
-                name_key="misconception",
-                text_key="correction",
-            ),
-            "source_excerpt": source_text[:1000],
+            "source_type": "pdf",
+            "page_count": len(reader.pages),
+            "metadata": metadata,
+            "pages": pages,
+            "text": text,
         }
-
-        if not material["summary"] and not material["concepts"] and not material["facts"]:
-            raise ValueError("Study material extraction did not include usable study content.")
-
-        return material
-
-    def _clean_text(self, value: Any) -> str:
-        """Return a whitespace-normalized string for scalar LLM output."""
-        if value is None:
-            return ""
-        return re.sub(r"\s+", " ", str(value)).strip()
-
-    def _clean_text_list(self, value: Any) -> list[str]:
-        """Normalize a possibly malformed LLM list into a list of strings."""
-        if not isinstance(value, list):
-            return []
-
-        cleaned: list[str] = []
-        for item in value:
-            text = self._clean_text(item)
-            if text:
-                cleaned.append(text)
-        return cleaned
-
-    def _normalize_named_items(self, value: Any, *, name_key: str, text_key: str) -> list[dict[str, str]]:
-        """Normalize list items that contain a label plus explanatory text."""
-        if not isinstance(value, list):
-            return []
-
-        normalized: list[dict[str, str]] = []
-        for item in value:
-            if not isinstance(item, dict):
-                continue
-
-            name = self._clean_text(item.get(name_key))
-            text = self._clean_text(item.get(text_key))
-            if name and text:
-                normalized.append({name_key: name, text_key: text})
-
-        return normalized
-
-    def _normalize_concepts(self, value: Any) -> list[dict[str, Any]]:
-        """Normalize concept objects and their supporting details."""
-        if not isinstance(value, list):
-            return []
-
-        normalized: list[dict[str, Any]] = []
-        for item in value:
-            if not isinstance(item, dict):
-                continue
-
-            name = self._clean_text(item.get("name"))
-            explanation = self._clean_text(item.get("explanation"))
-            supporting_details = self._clean_text_list(item.get("supporting_details"))
-            if name and explanation:
-                normalized.append(
-                    {
-                        "name": name,
-                        "explanation": explanation,
-                        "supporting_details": supporting_details,
-                    }
-                )
-
-        return normalized
-
-    def _extract_text_from_pdf_bytes(self, pdf_bytes: bytes, max_chars: int = 3000) -> str:
-        """Extract a best-effort text snippet from PDF bytes without external dependencies."""
-        streams = re.findall(rb"stream\r?\n(.*?)\r?\nendstream", pdf_bytes, flags=re.DOTALL)
-        chunks: list[str] = []
-
-        # Try each raw stream and a best-effort decompressed variant when possible.
-        for stream_bytes in streams:
-            for candidate in self._stream_text_candidates(stream_bytes):
-                chunks.extend(self._extract_pdf_text_fragments(candidate))
-                if len(" ".join(chunks)) >= max_chars:
-                    break
-            if len(" ".join(chunks)) >= max_chars:
-                break
-
-        # Fallback: scan whole payload if no stream text was captured.
-        if not chunks:
-            decoded = pdf_bytes.decode("latin-1", errors="ignore")
-            chunks.extend(self._extract_pdf_text_fragments(decoded))
-            if not chunks:
-                chunks.extend(self._extract_plaintext_fragments(decoded))
-
-        text = " ".join(chunk.strip() for chunk in chunks if chunk.strip())
-        text = re.sub(r"\s+", " ", text).strip()
-
-        if not text:
-            return ""
-        return text[:max_chars]
-
-    def _stream_text_candidates(self, stream_bytes: bytes) -> list[str]:
-        """Return decoded stream variants (raw and, when possible, Flate-decoded)."""
-        candidates: list[str] = [stream_bytes.decode("latin-1", errors="ignore")]
-
-        try:
-            decompressed = zlib.decompress(stream_bytes)
-        except Exception:
-            decompressed = None
-
-        if decompressed:
-            candidates.append(decompressed.decode("latin-1", errors="ignore"))
-
-        return candidates
-
-    def _extract_pdf_text_fragments(self, content: str) -> list[str]:
-        """Extract likely text-showing fragments from PDF content streams."""
-        fragments: list[str] = []
-
-        # Simple text-show operators: (text) Tj and (text) TJ
-        for literal in re.findall(r"\(((?:\\.|[^\\()])*)\)\s*T[Jj]", content):
-            fragments.append(self._unescape_pdf_literal(literal))
-
-        # Text arrays: [ ... ] TJ can include strings and hex chunks.
-        for array_content in re.findall(r"\[(.*?)\]\s*TJ", content, flags=re.DOTALL):
-            for literal in re.findall(r"\(((?:\\.|[^\\()])*)\)", array_content):
-                fragments.append(self._unescape_pdf_literal(literal))
-            for hex_text in re.findall(r"<([0-9A-Fa-f\s]+)>", array_content):
-                decoded_hex = self._decode_pdf_hex_text(hex_text)
-                if decoded_hex:
-                    fragments.append(decoded_hex)
-
-        # Some PDFs emit direct hex text-showing tokens: <...> Tj / TJ
-        for hex_text in re.findall(r"<([0-9A-Fa-f\s]+)>\s*T[Jj]", content):
-            decoded_hex = self._decode_pdf_hex_text(hex_text)
-            if decoded_hex:
-                fragments.append(decoded_hex)
-
-        return [f for f in (frag.strip() for frag in fragments) if f]
-
-    def _extract_plaintext_fragments(self, content: str) -> list[str]:
-        """Extract readable fallback text from PDF-like payloads used in tests/dev."""
-        fragments: list[str] = []
-
-        for line in content.splitlines():
-            line = self._clean_text(line)
-            if not line or line.startswith("%PDF-") or line.endswith(" obj") or line == "endobj":
-                continue
-            if len(line) < 20 and not re.search(r"[.!?]$", line):
-                continue
-            fragments.append(line)
-
-        return fragments
-
-    def _unescape_pdf_literal(self, text: str) -> str:
-        """Unescape common PDF literal-string escape sequences."""
-        text = text.replace(r"\(", "(").replace(r"\)", ")").replace(r"\\", "\\")
-        text = text.replace(r"\ ", " ")
-        text = text.replace(r"\n", "\n").replace(r"\r", "\r")
-        text = text.replace(r"\t", "\t").replace(r"\b", "\b").replace(r"\f", "\f")
-
-        def _octal_replace(match: re.Match[str]) -> str:
-            return chr(int(match.group(1), 8))
-
-        text = re.sub(r"\\([0-7]{1,3})", _octal_replace, text)
-        return re.sub(r"\s+", " ", text).strip()
-
-    def _decode_pdf_hex_text(self, hex_text: str) -> str:
-        """Decode a PDF hex string, trying UTF-16BE first when it looks BOM-prefixed."""
-        normalized = re.sub(r"\s+", "", hex_text)
-        if not normalized:
-            return ""
-
-        if len(normalized) % 2 == 1:
-            normalized += "0"
-
-        try:
-            raw = bytes.fromhex(normalized)
-        except ValueError:
-            return ""
-
-        if raw.startswith(b"\xfe\xff"):
-            try:
-                return raw[2:].decode("utf-16-be", errors="ignore").strip()
-            except Exception:  # pragma: no cover - defensive guard for malformed runtime codec state
-                return ""
-
-        decoded = raw.decode("latin-1", errors="ignore")
-        return re.sub(r"\s+", " ", decoded).strip()
 
     def _generate_questions_with_llm(self, qcount: int, source_excerpt: str | None = None) -> List[dict]:
         """Generate quiz questions with the LLM and normalize them into app format."""
@@ -624,14 +385,15 @@ class StriveService:
         with open(path, "wb") as fh:
             fh.write(pdf_bytes)
 
+        study_material = self.extract_study_material_from_pdf(pdf_bytes)
+        source_excerpt = json.dumps(study_material, sort_keys=True)
+
         # Try to generate questions using the existing LLM helper. If the
         # environment is not configured for OpenAI (no API key or network),
         # fall back to a simple deterministic placeholder set so the API
         # remains usable in dev environments.
         try:
-            study_material = self.extract_study_material_from_pdf(pdf_bytes)
-            source_context = json.dumps(study_material, sort_keys=True)
-            questions = self._generate_questions_with_llm(qcount=question_count, source_excerpt=source_context)
+            questions = self._generate_questions_with_llm(qcount=question_count, source_excerpt=source_excerpt)
         except Exception:
             questions = []
             for i in range(1, question_count + 1):
