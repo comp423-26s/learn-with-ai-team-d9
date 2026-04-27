@@ -28,7 +28,12 @@ describe('StudentView', () => {
     });
   });
 
-  function configureAndRender(options: { routeCourseId?: string | null } = {}) {
+  function configureAndRender(
+    options: {
+      routeCourseId?: string | null;
+      activeChildPath?: string | null;
+    } = {},
+  ) {
     const mockPageTitle = {
       setTitle: vi.fn(),
     };
@@ -54,6 +59,12 @@ describe('StudentView', () => {
       setPendingSourceQuiz: vi.fn(),
     };
     const mockRoute = {
+      firstChild:
+        options.activeChildPath === null
+          ? null
+          : options.activeChildPath
+            ? { snapshot: { routeConfig: { path: options.activeChildPath } } }
+            : null,
       parent: {
         snapshot: {
           paramMap: {
@@ -96,6 +107,13 @@ describe('StudentView', () => {
     expect(fixture.nativeElement.textContent).toContain("Try Today's Challenge!");
     expect(fixture.nativeElement.textContent).toContain('Average');
     expect(fixture.nativeElement.textContent).toContain('--');
+  });
+
+  it('should hide dashboard sections while the quiz child route is active', () => {
+    const { fixture } = configureAndRender({ activeChildPath: 'daily-practice' });
+
+    expect(fixture.nativeElement.textContent).not.toContain('Daily Challenge');
+    expect(fixture.nativeElement.textContent).not.toContain('Source Context');
   });
 
   it('should render average score from recent daily challenge results', () => {
@@ -163,6 +181,6 @@ describe('StudentView', () => {
       queryParams: { mode: 'source' },
     });
     expect(fixture.nativeElement.textContent).toContain('lesson-notes.pdf');
-    expect(fixture.nativeElement.textContent).toContain('Create Source-Based Quiz');
+    expect(fixture.nativeElement.textContent).toContain('Create Source-Based Quiz (5 Questions)');
   });
 });

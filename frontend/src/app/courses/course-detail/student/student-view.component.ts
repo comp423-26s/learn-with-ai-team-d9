@@ -68,6 +68,10 @@ export class StudentView {
     this.titleService.setTitle('Student Dashboard');
   }
 
+  protected isQuizRouteActive(): boolean {
+    return this.route.firstChild !== null;
+  }
+
   protected onSourceFileSelected(event: Event): void {
     const target = event.target as HTMLInputElement;
     const file = target.files?.[0] ?? null;

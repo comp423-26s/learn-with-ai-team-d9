@@ -361,16 +361,12 @@ describe('DailyPractice', () => {
       'A dictionary stores key-value pairs in Python.',
     );
 
-    const restartButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find(
-      (button) => (button as HTMLButtonElement).textContent?.includes('Try Again'),
-    ) as HTMLButtonElement | undefined;
+    const restartButton = fixture.nativeElement.querySelector(
+      'app-back-to-student-dashboard-button a',
+    ) as HTMLAnchorElement | null;
 
     expect(restartButton).toBeTruthy();
-    restartButton?.click();
-    fixture.detectChanges();
-
-    expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
-    expect(fixture.nativeElement.textContent).not.toContain('Challenge complete');
+    expect(restartButton?.textContent).toContain('Back to Student Dashboard');
   });
 
   it('should show an error when no course activities are available', async () => {

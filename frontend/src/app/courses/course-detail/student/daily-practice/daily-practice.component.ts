@@ -13,6 +13,7 @@ import { PageTitleService } from '../../../../page-title.service';
 import { ActivityService } from '../../activities/activity.service';
 import { QuizQuestionsResponse, QuizSubmitResponse } from './strive-quiz.models';
 import { StriveQuizService } from './strive-quiz.service';
+import { BackToStudentDashboardButton } from '../back-to-student-dashboard-button.component';
 
 export const RECENT_DAILY_SCORES_STORAGE_KEY = 'lwai-recent-daily-scores';
 const MAX_RECENT_DAILY_SCORES = 10;
@@ -21,7 +22,7 @@ const MAX_RECENT_DAILY_SCORES = 10;
 @Component({
   selector: 'app-daily-practice',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatButtonModule, MatCardModule, MatRadioModule],
+  imports: [BackToStudentDashboardButton, MatButtonModule, MatCardModule, MatRadioModule],
   templateUrl: './daily-practice.component.html',
 })
 export class DailyPractice {

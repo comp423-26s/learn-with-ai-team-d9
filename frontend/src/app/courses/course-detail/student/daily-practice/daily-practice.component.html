@@ -65,7 +65,7 @@
         @if (message()) {
           <p class="text-sm opacity-75" role="status">{{ message() }}</p>
         }
-        <button mat-flat-button color="primary" type="button" (click)="restart()">Try Again</button>
+        <app-back-to-student-dashboard-button />
       </mat-card-content>
     </mat-card>
   } @else if (currentQuestion(); as question) {

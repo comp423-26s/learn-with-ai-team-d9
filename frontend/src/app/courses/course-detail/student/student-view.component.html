@@ -3,94 +3,114 @@
   SPDX-License-Identifier: MIT
 -->
 
-<section class="grid gap-6 lg:grid-cols-[2fr_1fr]" aria-label="Student dashboard">
-  <section class="space-y-6">
-    <header class="space-y-2">
-      <p class="text-sm font-medium tracking-[0.08em] uppercase opacity-80">Daily Challenge</p>
-      <p class="max-w-3xl text-base opacity-90">
-        Build momentum every day with one short challenge. Your streak, rank, and average update as
-        daily practice results are recorded.
-      </p>
-      <a mat-flat-button color="primary" [routerLink]="['daily-practice']">
-        Try Today's Challenge!
-      </a>
-    </header>
+@if (!isQuizRouteActive()) {
+  <section class="grid gap-6 lg:grid-cols-[2fr_1fr]" aria-label="Student dashboard">
+    <section class="space-y-6" aria-label="Daily challenge section">
+      <header class="space-y-3">
+        <p class="text-sm font-medium tracking-[0.08em] uppercase opacity-80">Daily Challenge</p>
+        <p class="max-w-3xl text-base opacity-90">
+          Build momentum every day with one short challenge. Your streak, rank, and average update
+          as daily practice results are recorded.
+        </p>
+        <div class="rounded-md border border-dashed px-4 py-3">
+          <p class="mb-2 text-sm opacity-80">Standard daily mode</p>
+          <a mat-flat-button color="primary" [routerLink]="['daily-practice']">
+            Try Today's Challenge!
+          </a>
+        </div>
+      </header>
 
-    <section class="grid gap-4 md:grid-cols-3" aria-label="Performance stats overview">
-      @for (stat of topLevelStats(); track stat.label) {
+      <section class="grid gap-4 md:grid-cols-3" aria-label="Performance stats overview">
+        @for (stat of topLevelStats(); track stat.label) {
+          <mat-card appearance="outlined">
+            <mat-card-content class="space-y-1">
+              <p class="text-sm font-medium opacity-75">{{ stat.label }}</p>
+              <p class="text-2xl font-semibold">{{ stat.value }}</p>
+              <p class="text-sm opacity-75">{{ stat.description }}</p>
+            </mat-card-content>
+          </mat-card>
+        }
+      </section>
+    </section>
+
+    <aside
+      aria-label="Source-aware quiz context"
+      class="space-y-4 rounded-lg border p-4 lg:border-l-2"
+    >
+      <header class="space-y-1">
+        <p class="text-sm font-medium tracking-[0.08em] uppercase opacity-80">Source Context</p>
+        <p class="text-sm opacity-80">Separate from daily challenge mode.</p>
+      </header>
+
+      <mat-card appearance="outlined">
+        <mat-card-content class="space-y-3">
+          <p class="text-sm font-medium opacity-90">Step 1: Add source files</p>
+          <p class="text-sm opacity-80">
+            Upload PDFs that will be used as context for quiz generation.
+          </p>
+
+          <div class="space-y-2">
+            <label class="text-sm font-medium" for="student-source-upload">Source PDF</label>
+            <input
+              id="student-source-upload"
+              type="file"
+              accept="application/pdf"
+              (change)="onSourceFileSelected($event)"
+              class="block w-full rounded-md border p-2 text-sm"
+            />
+          </div>
+
+          <button
+            mat-flat-button
+            color="primary"
+            type="button"
+            (click)="addSource()"
+            [disabled]="selectedSourceFile() === null"
+          >
+            Add Source To Context
+          </button>
+
+          <hr class="opacity-20" />
+
+          <p class="text-sm font-medium opacity-90">Step 2: Generate source-based quiz</p>
+          <p class="text-sm opacity-80">
+            Creates 5 questions and answer choices using extracted JSON from your added sources.
+          </p>
+
+          <button
+            mat-stroked-button
+            color="primary"
+            type="button"
+            (click)="createSourceBasedQuiz()"
+            [disabled]="uploadedSources().length === 0 || creatingSourceQuiz()"
+          >
+            @if (creatingSourceQuiz()) {
+              Creating Quiz...
+            } @else {
+              Create Source-Based Quiz (5 Questions)
+            }
+          </button>
+
+          @if (sourceStatusMessage()) {
+            <p class="text-xs opacity-80" role="status">{{ sourceStatusMessage() }}</p>
+          }
+        </mat-card-content>
+      </mat-card>
+
+      @if (uploadedSources().length > 0) {
         <mat-card appearance="outlined">
-          <mat-card-content class="space-y-1">
-            <p class="text-sm font-medium opacity-75">{{ stat.label }}</p>
-            <p class="text-2xl font-semibold">{{ stat.value }}</p>
-            <p class="text-sm opacity-75">{{ stat.description }}</p>
+          <mat-card-content class="space-y-2">
+            <p class="text-sm font-medium opacity-80">Added sources</p>
+            <ul class="list-disc space-y-1 pl-5 text-sm opacity-90">
+              @for (source of uploadedSources(); track source.name) {
+                <li>{{ source.name }}</li>
+              }
+            </ul>
           </mat-card-content>
         </mat-card>
       }
-    </section>
+    </aside>
   </section>
-
-  <aside aria-label="Source-aware quiz context" class="space-y-4">
-    <mat-card appearance="outlined">
-      <mat-card-content class="space-y-3">
-        <p class="text-sm font-medium tracking-[0.08em] uppercase opacity-80">Source Context</p>
-        <p class="text-sm opacity-80">
-          Add a PDF source so AI-generated questions can use it as grounding context.
-        </p>
-
-        <div class="space-y-2">
-          <label class="text-sm font-medium" for="student-source-upload">Source PDF</label>
-          <input
-            id="student-source-upload"
-            type="file"
-            accept="application/pdf"
-            (change)="onSourceFileSelected($event)"
-            class="block w-full rounded-md border p-2 text-sm"
-          />
-        </div>
-
-        <button
-          mat-flat-button
-          color="primary"
-          type="button"
-          (click)="addSource()"
-          [disabled]="selectedSourceFile() === null"
-        >
-          Add Source
-        </button>
-
-        <button
-          mat-stroked-button
-          color="primary"
-          type="button"
-          (click)="createSourceBasedQuiz()"
-          [disabled]="uploadedSources().length === 0 || creatingSourceQuiz()"
-        >
-          @if (creatingSourceQuiz()) {
-            Creating Quiz...
-          } @else {
-            Create Source-Based Quiz
-          }
-        </button>
-
-        @if (sourceStatusMessage()) {
-          <p class="text-xs opacity-80" role="status">{{ sourceStatusMessage() }}</p>
-        }
-      </mat-card-content>
-    </mat-card>
-
-    @if (uploadedSources().length > 0) {
-      <mat-card appearance="outlined">
-        <mat-card-content class="space-y-2">
-          <p class="text-sm font-medium opacity-80">Added sources</p>
-          <ul class="list-disc space-y-1 pl-5 text-sm opacity-90">
-            @for (source of uploadedSources(); track source.name) {
-              <li>{{ source.name }}</li>
-            }
-          </ul>
-        </mat-card-content>
-      </mat-card>
-    }
-  </aside>
-</section>
+}
 
 <router-outlet />
