@@ -12,12 +12,6 @@
           Build momentum every day with one short challenge. Your streak, rank, and average update
           as daily practice results are recorded.
         </p>
-        <div class="rounded-md border border-dashed px-4 py-3">
-          <p class="mb-2 text-sm opacity-80">Standard daily mode</p>
-          <a mat-flat-button color="primary" [routerLink]="['daily-practice']">
-            Try Today's Challenge!
-          </a>
-        </div>
       </header>
 
       <section class="grid gap-4 md:grid-cols-3" aria-label="Performance stats overview">
@@ -31,6 +25,13 @@
           </mat-card>
         }
       </section>
+
+      <div class="rounded-md border border-dashed px-4 py-3">
+        <p class="mb-2 text-sm opacity-80">Standard daily mode</p>
+        <a mat-flat-button color="primary" [routerLink]="['daily-practice']">
+          Try Today's Challenge!
+        </a>
+      </div>
     </section>
 
     <aside
