@@ -52,12 +52,27 @@
           <div class="space-y-2">
             <label class="text-sm font-medium" for="student-source-upload">Source PDF</label>
             <input
+              #sourceFileInput
               id="student-source-upload"
               type="file"
               accept="application/pdf"
               (change)="onSourceFileSelected($event)"
-              class="block w-full rounded-md border p-2 text-sm"
+              class="hidden"
             />
+            <button
+              mat-flat-button
+              color="accent"
+              type="button"
+              (click)="sourceFileInput.click()"
+              class="w-full"
+            >
+              Choose PDF File
+            </button>
+            @if (selectedSourceFileName()) {
+              <p class="text-center text-sm opacity-80">
+                Selected: <span class="font-medium">{{ selectedSourceFileName() }}</span>
+              </p>
+            }
           </div>
 
           <button

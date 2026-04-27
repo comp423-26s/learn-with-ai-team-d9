@@ -45,6 +45,11 @@ export class StudentView {
   protected readonly sourceStatusMessage = signal('');
   protected readonly creatingSourceQuiz = signal(false);
 
+  protected readonly selectedSourceFileName = computed(() => {
+    const file = this.selectedSourceFile();
+    return file ? file.name : null;
+  });
+
   protected readonly topLevelStats = computed<StudentTopLevelStat[]>(() => [
     {
       label: 'Streak',

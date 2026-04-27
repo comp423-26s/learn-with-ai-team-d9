@@ -183,4 +183,24 @@ describe('StudentView', () => {
     expect(fixture.nativeElement.textContent).toContain('lesson-notes.pdf');
     expect(fixture.nativeElement.textContent).toContain('Create Source-Based Quiz (5 Questions)');
   });
+
+  it('should display selected file name before adding it to sources', () => {
+    const { fixture } = configureAndRender();
+    const component = fixture.componentInstance as StudentView;
+    const file = new File(['fake pdf'], 'my-document.pdf', { type: 'application/pdf' });
+
+    expect(fixture.nativeElement.textContent).not.toContain('Selected:');
+
+    (
+      component as unknown as {
+        onSourceFileSelected: (event: Event) => void;
+      }
+    ).onSourceFileSelected({
+      target: { files: [file] },
+    } as unknown as Event);
+
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Selected: my-document.pdf');
+  });
 });
