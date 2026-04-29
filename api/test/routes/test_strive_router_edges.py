@@ -1,13 +1,20 @@
 from datetime import datetime, timezone
 from io import BytesIO
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 from fastapi import HTTPException, UploadFile
 from starlette.datastructures import Headers
 
 from api.models.strive import QuizCreateRequest, QuizSubmitRequest
-from api.routes.strive_router import get_quiz, start_quiz, submit_quiz, upload_pdf_and_generate_quiz
+from api.routes.strive_router import (
+    create_source_quiz,
+    get_quiz,
+    list_sources,
+    start_quiz,
+    submit_quiz,
+    upload_pdf_and_generate_quiz,
+)
 
 
 class DummyActivity:
@@ -78,6 +85,12 @@ class FailingService:
 
     def generate_quiz_from_pdf(self, *a: Any, **k: Any) -> None:
         raise KeyError("no activity")
+
+    def list_uploaded_sources(self, *a: Any, **k: Any) -> None:
+        raise RuntimeError("no sources")
+
+    def generate_quiz_from_source(self, *a: Any, **k: Any) -> None:
+        raise KeyError("no source")
 
 
 def test_start_quiz_unwired_raises_501() -> None:
@@ -158,6 +171,8 @@ def test_upload_pdf_and_generate_quiz_returns_response() -> None:
         activity=activity,
         pdf_bytes=b"%PDF-1.4 test pdf",
         question_count=7,
+        source_filename="quiz.pdf",
+        source_content_type="application/pdf",
     )
 
 
@@ -268,3 +283,114 @@ def test_upload_pdf_and_generate_quiz_translates_service_errors() -> None:
         except HTTPException as e:
             assert e.status_code == expected_status
             assert e.detail == expected_detail
+
+
+def test_list_sources_returns_response() -> None:
+    subject: Any = _stub_user(123)
+
+    class Service:
+        def list_uploaded_sources(self, *a: Any, **k: Any) -> list[dict[str, Any]]:
+            return [
+                {
+                    "source_id": 11,
+                    "activity_id": 7,
+                    "filename": "saved.pdf",
+                    "content_type": "application/pdf",
+                    "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+                }
+            ]
+
+    result = list_sources(subject=subject, strive_svc=cast(Any, Service()))
+
+    assert len(result) == 1
+    assert result[0].source_id == 11
+    assert result[0].filename == "saved.pdf"
+
+
+def test_create_source_quiz_returns_response() -> None:
+    subject: Any = _stub_user(123)
+
+    class Service:
+        def generate_quiz_from_source(self, *a: Any, **k: Any) -> dict[str, Any]:
+            return _make_quiz_payload()
+
+    body: Any = type("B", (), {"question_count": 5})()
+    result = create_source_quiz(source_id=11, body=body, subject=subject, strive_svc=cast(Any, Service()))
+
+    assert result.id == 101
+    assert result.activity_id == 1
+
+
+def test_create_source_quiz_translates_errors() -> None:
+    subject: Any = _stub_user(123)
+
+    class PermissionService:
+        def generate_quiz_from_source(self, *a: Any, **k: Any) -> None:
+            raise PermissionError("nope")
+
+    class GenericService:
+        def generate_quiz_from_source(self, *a: Any, **k: Any) -> None:
+            raise RuntimeError("boom")
+
+    body: Any = type("B", (), {"question_count": 5})()
+
+    try:
+        create_source_quiz(source_id=11, body=body, subject=subject, strive_svc=cast(Any, PermissionService()))
+        raise AssertionError("expected HTTPException")
+    except HTTPException as e:
+        assert e.status_code == 403
+
+    try:
+        create_source_quiz(source_id=11, body=body, subject=subject, strive_svc=cast(Any, GenericService()))
+        raise AssertionError("expected HTTPException")
+    except HTTPException as e:
+        assert e.status_code == 500
+
+
+def test_list_sources_unwired_raises_501() -> None:
+    subject: Any = _stub_user(1)
+    try:
+        list_sources(subject=subject, strive_svc=None)  # type: ignore[arg-type]
+        raise AssertionError("expected HTTPException")
+    except HTTPException as e:
+        assert e.status_code == 501
+
+
+def test_create_source_quiz_unwired_raises_501() -> None:
+    subject: Any = _stub_user(1)
+    body: Any = type("B", (), {"question_count": 5})()
+    try:
+        create_source_quiz(source_id=1, body=body, subject=subject, strive_svc=None)  # type: ignore[arg-type]
+        raise AssertionError("expected HTTPException")
+    except HTTPException as e:
+        assert e.status_code == 501
+
+
+def test_create_source_quiz_key_error_raises_404() -> None:
+    subject: Any = _stub_user(1)
+
+    class NotFoundService:
+        def generate_quiz_from_source(self, *a: Any, **k: Any) -> None:
+            raise KeyError("source not found")
+
+    body: Any = type("B", (), {"question_count": 5})()
+    try:
+        create_source_quiz(source_id=99, body=body, subject=subject, strive_svc=cast(Any, NotFoundService()))
+        raise AssertionError("expected HTTPException")
+    except HTTPException as e:
+        assert e.status_code == 404
+
+
+def test_create_source_quiz_value_error_raises_400() -> None:
+    subject: Any = _stub_user(1)
+
+    class BadValueService:
+        def generate_quiz_from_source(self, *a: Any, **k: Any) -> None:
+            raise ValueError("bad input")
+
+    body: Any = type("B", (), {"question_count": 5})()
+    try:
+        create_source_quiz(source_id=1, body=body, subject=subject, strive_svc=cast(Any, BadValueService()))
+        raise AssertionError("expected HTTPException")
+    except HTTPException as e:
+        assert e.status_code == 400

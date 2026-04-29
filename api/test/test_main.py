@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
@@ -184,8 +185,10 @@ def test_lifespan_context_skips_consumer_in_test_environment(
         with pytest.raises(StopAsyncIteration):
             await anext(lifespan)
 
-    asyncio.run(exercise())
+    with patch.object(lifespan_module, "create_db_and_tables") as create_db_and_tables_mock:
+        asyncio.run(exercise())
 
+    create_db_and_tables_mock.assert_called_once_with()
     assert called is False
 
 
@@ -221,8 +224,10 @@ def test_lifespan_context_starts_and_cancels_consumer_in_non_test_environment(
         with pytest.raises(StopAsyncIteration):
             await anext(lifespan)
 
-    asyncio.run(exercise())
+    with patch.object(lifespan_module, "create_db_and_tables") as create_db_and_tables_mock:
+        asyncio.run(exercise())
 
+    create_db_and_tables_mock.assert_called_once_with()
     assert started.is_set()
     assert cancelled.is_set()
 

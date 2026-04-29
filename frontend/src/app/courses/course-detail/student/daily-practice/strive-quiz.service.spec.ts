@@ -132,6 +132,56 @@ describe('StriveQuizService', () => {
     await expect(promise).resolves.toMatchObject({ id: 202, mode: 'daily' });
   });
 
+  it('should list persisted sources', async () => {
+    const promise = service.listSources();
+
+    const request = httpTesting.expectOne('/api/sources');
+    expect(request.request.method).toBe('GET');
+
+    request.flush([
+      {
+        source_id: 31,
+        activity_id: 7,
+        filename: 'saved-notes.pdf',
+        content_type: 'application/pdf',
+        created_at: '2026-04-20T12:00:00Z',
+      },
+    ]);
+
+    await expect(promise).resolves.toEqual([
+      {
+        source_id: 31,
+        activity_id: 7,
+        filename: 'saved-notes.pdf',
+        content_type: 'application/pdf',
+        created_at: '2026-04-20T12:00:00Z',
+      },
+    ]);
+  });
+
+  it('should create a quiz from a persisted source', async () => {
+    const promise = service.createSourceQuiz(31, 5);
+
+    const request = httpTesting.expectOne('/api/sources/31/quizzes');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ question_count: 5 });
+
+    request.flush({
+      id: 303,
+      activity_id: 7,
+      student_pid: 730611076,
+      status: 'in_progress',
+      started_at: '2026-04-20T12:00:00Z',
+      question_count: 5,
+      mode: 'daily',
+      module_name: null,
+      topic: 'Saved Source',
+      questions: [],
+    });
+
+    await expect(promise).resolves.toMatchObject({ id: 303, activity_id: 7 });
+  });
+
   it('should consume and clear the pending source quiz', () => {
     const pendingQuiz: QuizQuestionsResponse = {
       id: 303,

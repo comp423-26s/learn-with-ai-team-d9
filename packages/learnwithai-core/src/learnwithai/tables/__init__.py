@@ -7,6 +7,7 @@ from .activity import Activity, ActivityType
 from .async_job import AsyncJob, AsyncJobStatus
 from .course import Course
 from .membership import Membership
+from .strive import StriveActivity, StriveQuestionSet, StriveSource, StriveSubmission
 from .submission import Submission
 from .user import User
 
@@ -17,6 +18,10 @@ __all__ = [
     "AsyncJobStatus",
     "Course",
     "Membership",
+    "StriveActivity",
+    "StriveQuestionSet",
+    "StriveSource",
+    "StriveSubmission",
     "Submission",
     "User",
 ]

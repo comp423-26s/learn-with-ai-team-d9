@@ -12,6 +12,8 @@ from api.models.strive import (
     QuizQuestionsResponse,
     QuizSubmitRequest,
     QuizSubmitResponse,
+    SourceQuizCreateRequest,
+    SourceSummaryResponse,
 )
 
 router = APIRouter(tags=["Strive"])
@@ -83,6 +85,22 @@ def submit_quiz(
         raise HTTPException(status_code=404, detail="Quiz submission not found")
 
 
+@router.get(
+    "/sources",
+    response_model=list[SourceSummaryResponse],
+    summary="List uploaded source files for the current student",
+)
+def list_sources(
+    subject: AuthenticatedUserDI,
+    strive_svc: StriveServiceDI,
+) -> list[SourceSummaryResponse]:
+    if strive_svc is None:
+        raise HTTPException(status_code=501, detail="StriveService not wired.")
+    return [
+        SourceSummaryResponse.model_validate(source) for source in strive_svc.list_uploaded_sources(subject=subject)
+    ]
+
+
 @router.post(
     "/activities/{activity_id}/quizzes/upload-pdf",
     status_code=HTTP_201_CREATED,
@@ -124,7 +142,12 @@ def upload_pdf_and_generate_quiz(
         # Delegate to the Strive service; service should accept PDF bytes and return
         # a submission dict compatible with QuizQuestionsResponse
         result = strive_svc.generate_quiz_from_pdf(
-            subject=subject, activity=activity, pdf_bytes=content, question_count=question_count
+            subject=subject,
+            activity=activity,
+            pdf_bytes=content,
+            question_count=question_count,
+            source_filename=file.filename,
+            source_content_type=file.content_type or "application/pdf",
         )
         return QuizQuestionsResponse.model_validate(result)
     except KeyError:
@@ -133,3 +156,35 @@ def upload_pdf_and_generate_quiz(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to generate quiz from PDF: {exc}")
+
+
+@router.post(
+    "/sources/{source_id}/quizzes",
+    status_code=HTTP_201_CREATED,
+    response_model=QuizQuestionsResponse,
+    summary="Generate a quiz from a previously stored source",
+)
+def create_source_quiz(
+    source_id: Annotated[int, Path(...)],
+    body: Annotated[SourceQuizCreateRequest, Body(...)],
+    subject: AuthenticatedUserDI,
+    strive_svc: StriveServiceDI,
+) -> QuizQuestionsResponse:
+    if strive_svc is None:
+        raise HTTPException(status_code=501, detail="StriveService not wired.")
+
+    try:
+        result = strive_svc.generate_quiz_from_source(
+            subject=subject,
+            source_id=source_id,
+            question_count=body.question_count,
+        )
+        return QuizQuestionsResponse.model_validate(result)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Source not found")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Not allowed to use this source")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to generate quiz from source: {exc}")
