@@ -8,10 +8,9 @@ database has been recreated. It creates all SQLModel tables and inserts a
 single dummy user for developer testing.
 """
 
-from random import seed
-
 import learnwithai.tables  # noqa: F401
 from learnwithai.db import create_db_and_tables, get_engine
+from learnwithai.dev_data import seed
 from sqlmodel import Session
 
 
@@ -31,7 +30,6 @@ def main() -> None:
     #         )
     #     )
     #     session.commit()
-
 
     with Session(get_engine()) as session:
         seed(session)
