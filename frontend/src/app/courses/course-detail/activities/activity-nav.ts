@@ -19,9 +19,10 @@ export function buildActivityContextNav(options: {
   courseId: number;
   activityId: number;
   role: 'staff' | 'student';
+  submitPath?: string;
   extraGroups?: LayoutNavigationGroup[];
 }): LayoutNavigationSection {
-  const { courseId, activityId, role, extraGroups } = options;
+  const { courseId, activityId, role, submitPath = 'submit', extraGroups } = options;
   const base = `/courses/${courseId}/activities/${activityId}`;
   const isStaff = role === 'staff';
 
@@ -50,7 +51,7 @@ export function buildActivityContextNav(options: {
         ]
       : [
           {
-            route: `${base}/submit`,
+            route: `${base}/${submitPath}`,
             label: 'Submissions',
             description: 'Open your submission view',
             icon: 'assignment',

@@ -109,6 +109,8 @@ export class DailyPractice {
     }
 
     const courseId = Number(this.route.parent?.parent?.snapshot.paramMap.get('id'));
+    const activityIdParam = this.route.snapshot.queryParamMap.get('activityId');
+    const activityId = activityIdParam === null ? null : Number(activityIdParam);
 
     if (Number.isNaN(courseId)) {
       this.setLoadError('Unable to load challenge questions because course context is missing.');
@@ -116,21 +118,23 @@ export class DailyPractice {
     }
 
     try {
-      const activities = await this.activityService.list(courseId);
-      const quizActivity = activities[0] ?? null;
+      const quizActivity =
+        activityId === null || Number.isNaN(activityId)
+          ? ((await this.activityService.list(courseId))[0] ?? null)
+          : await this.activityService.get(courseId, activityId);
 
-      if (quizActivity === null) {
+      if (quizActivity !== null) {
+        const createdQuiz = await this.striveQuizService.startQuiz(quizActivity.id, {
+          mode: 'daily',
+          question_count: 5,
+        });
+        const quiz = await this.striveQuizService.getQuiz(createdQuiz.id);
+
+        this.applyLoadedQuiz(quiz);
+      } else {
         this.setLoadError('Unable to load challenge questions because no course activities exist.');
         return;
       }
-
-      const createdQuiz = await this.striveQuizService.startQuiz(quizActivity.id, {
-        mode: 'daily',
-        question_count: 5,
-      });
-      const quiz = await this.striveQuizService.getQuiz(createdQuiz.id);
-
-      this.applyLoadedQuiz(quiz);
     } catch {
       this.setLoadError('Unable to load challenge questions from the Strive quiz API.');
     } finally {

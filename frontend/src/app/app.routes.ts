@@ -89,6 +89,13 @@ export const routes: Routes = [
                   ),
               },
               {
+                path: ':activityId/strive-submit',
+                loadComponent: () =>
+                  import('./courses/course-detail/activities/strive-submit/strive-submit.component').then(
+                    (m) => m.StriveSubmit,
+                  ),
+              },
+              {
                 path: ':activityId/submissions/:studentPid',
                 loadComponent: () =>
                   import('./courses/course-detail/activities/submission-detail/submission-detail.component').then(

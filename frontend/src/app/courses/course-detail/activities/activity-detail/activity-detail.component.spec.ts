@@ -171,6 +171,27 @@ describe('ActivityDetail', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Must explain clearly');
   });
 
+  it('should show a simple info panel for strive activities', async () => {
+    const mockActivityService = {
+      get: vi.fn(() =>
+        Promise.resolve({
+          ...baseActivity,
+          type: 'strive' as const,
+          title: 'Daily Strive Challenge',
+        }),
+      ),
+      listSubmissionsRoster: vi.fn(() => Promise.resolve([])),
+    };
+    const { fixture } = setup({ activityService: mockActivityService });
+    await flush();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain(
+      'This Strive activity is listed in the Activities section.',
+    );
+    expect(mockActivityService.listSubmissionsRoster).not.toHaveBeenCalled();
+  });
+
   it('should show status labels for submitted and not-submitted rows', async () => {
     const { fixture } = setup();
     await flush();
