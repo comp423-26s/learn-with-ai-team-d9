@@ -178,3 +178,41 @@ class QuizSubmitResponse(BaseModel):
     )
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SourceSummaryResponse(BaseModel):
+    """Summary for a persisted Strive source file."""
+
+    source_id: int = Field(..., description="Source row id.", json_schema_extra={"example": 501})
+    activity_id: int = Field(
+        ..., description="Activity id the source was uploaded for.", json_schema_extra={"example": 42}
+    )
+    filename: Optional[str] = Field(
+        default=None,
+        description="Original uploaded filename.",
+        json_schema_extra={"example": "lesson-notes.pdf"},
+    )
+    content_type: str = Field(
+        ..., description="MIME type for the stored file.", json_schema_extra={"example": "application/pdf"}
+    )
+    created_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the source was stored.",
+        json_schema_extra={"example": "2026-04-20T12:00:00Z"},
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SourceQuizCreateRequest(BaseModel):
+    """Request body for generating a quiz from a stored source."""
+
+    question_count: int = Field(
+        default=5,
+        description="Number of multiple-choice questions to generate (1–10).",
+        json_schema_extra={"example": 5},
+        ge=1,
+        le=10,
+    )
+
+    model_config = ConfigDict(from_attributes=True)

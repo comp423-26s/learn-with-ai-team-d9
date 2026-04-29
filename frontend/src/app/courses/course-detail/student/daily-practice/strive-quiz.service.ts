@@ -14,6 +14,14 @@ import {
   QuizSubmitResponse,
 } from './strive-quiz.models';
 
+export type SourceSummary = {
+  source_id: number;
+  activity_id: number;
+  filename: string | null;
+  content_type: string;
+  created_at: string;
+};
+
 /** Wraps Strive quiz route calls used by the student daily challenge UI. */
 @Injectable({ providedIn: 'root' })
 export class StriveQuizService {
@@ -54,6 +62,20 @@ export class StriveQuizService {
         `/api/activities/${activityId}/quizzes/upload-pdf`,
         formData,
       ),
+    );
+  }
+
+  /** Loads persisted source files for the current student. */
+  listSources(): Promise<SourceSummary[]> {
+    return firstValueFrom(this.http.get<SourceSummary[]>(`/api/sources`));
+  }
+
+  /** Generates a quiz from a previously saved source. */
+  createSourceQuiz(sourceId: number, questionCount: number): Promise<QuizQuestionsResponse> {
+    return firstValueFrom(
+      this.http.post<QuizQuestionsResponse>(`/api/sources/${sourceId}/quizzes`, {
+        question_count: questionCount,
+      }),
     );
   }
 

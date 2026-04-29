@@ -34,6 +34,13 @@ describe('StudentView', () => {
       activeChildPath?: string | null;
       activityList?: Array<{ id: number }>;
       activityListError?: boolean;
+      persistedSources?: Array<{
+        source_id: number;
+        activity_id: number;
+        filename: string | null;
+        content_type: string;
+        created_at: string;
+      }>;
       uploadError?: boolean;
     } = {},
   ) {
@@ -53,6 +60,7 @@ describe('StudentView', () => {
       }),
     };
     const mockStriveService = {
+      listSources: vi.fn(() => Promise.resolve(options.persistedSources ?? [])),
       uploadPdfAndGenerateQuiz: vi.fn(() => {
         if (options.uploadError) {
           return Promise.reject(new Error('failed to upload source'));
@@ -60,6 +68,18 @@ describe('StudentView', () => {
 
         return Promise.resolve({
           id: 101,
+          activity_id: 7,
+          student_pid: 730611076,
+          status: 'in_progress',
+          mode: 'daily',
+          module_name: null,
+          topic: 'Python Basics',
+          questions: [{ question_id: 1, text: 'What does def do?', choices: [] }],
+        });
+      }),
+      createSourceQuiz: vi.fn(() => {
+        return Promise.resolve({
+          id: 202,
           activity_id: 7,
           student_pid: 730611076,
           status: 'in_progress',
@@ -195,6 +215,61 @@ describe('StudentView', () => {
     });
     expect(fixture.nativeElement.textContent).toContain('lesson-notes.pdf');
     expect(fixture.nativeElement.textContent).toContain('Create Source-Based Quiz (5 Questions)');
+  });
+
+  it('should load persisted sources and create a quiz from saved context after refresh', async () => {
+    const { fixture, mockActivityService, mockStriveService, mockRouter } = configureAndRender({
+      persistedSources: [
+        {
+          source_id: 31,
+          activity_id: 7,
+          filename: 'saved-notes.pdf',
+          content_type: 'application/pdf',
+          created_at: '2026-04-20T12:00:00Z',
+        },
+      ],
+    });
+    const component = fixture.componentInstance as StudentView;
+
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('saved-notes.pdf');
+
+    await (
+      component as unknown as {
+        createSourceBasedQuiz: () => Promise<void>;
+      }
+    ).createSourceBasedQuiz();
+    fixture.detectChanges();
+
+    expect(mockActivityService.list).toHaveBeenCalledWith(1);
+    expect(mockStriveService.createSourceQuiz).toHaveBeenCalledWith(31, 5);
+    expect(mockStriveService.uploadPdfAndGenerateQuiz).not.toHaveBeenCalled();
+    expect(mockStriveService.setPendingSourceQuiz).toHaveBeenCalled();
+    expect(mockRouter.navigate).toHaveBeenCalledWith(['daily-practice'], {
+      relativeTo: expect.anything(),
+      queryParams: { mode: 'source' },
+    });
+  });
+
+  it('should fall back to a generated source name when a persisted source has no filename', async () => {
+    const { fixture } = configureAndRender({
+      persistedSources: [
+        {
+          source_id: 44,
+          activity_id: 7,
+          filename: null,
+          content_type: 'application/pdf',
+          created_at: '2026-04-20T12:00:00Z',
+        },
+      ],
+    });
+
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Source 44');
   });
 
   it('should display selected file name before adding it to sources', () => {
@@ -466,5 +541,20 @@ describe('StudentView', () => {
     }
     await deferredActivities;
     await Promise.resolve();
+  });
+
+  it('should throw when requireSelectedSourceFile is called with no file attached', () => {
+    const { fixture } = configureAndRender();
+    const component = fixture.componentInstance as StudentView;
+
+    const sourceWithNoFile = { name: 'ghost.pdf' };
+
+    expect(() => {
+      (
+        component as unknown as {
+          requireSelectedSourceFile: (source: { name: string }) => File;
+        }
+      ).requireSelectedSourceFile(sourceWithNoFile);
+    }).toThrow('Selected source file is unavailable.');
   });
 });

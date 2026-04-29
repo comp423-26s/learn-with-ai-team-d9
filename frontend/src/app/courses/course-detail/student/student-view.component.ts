@@ -11,7 +11,7 @@ import { PageTitleService } from '../../../page-title.service';
 import { LayoutNavigationService } from '../../../layout/layout-navigation.service';
 import { RECENT_DAILY_SCORES_STORAGE_KEY } from './daily-practice/daily-practice.component';
 import { ActivityService } from '../activities/activity.service';
-import { StriveQuizService } from './daily-practice/strive-quiz.service';
+import { SourceSummary, StriveQuizService } from './daily-practice/strive-quiz.service';
 
 type StudentTopLevelStat = {
   label: string;
@@ -21,7 +21,11 @@ type StudentTopLevelStat = {
 
 type UploadedSource = {
   name: string;
-  file: File;
+  file?: File;
+  sourceId?: number;
+  activityId?: number;
+  contentType?: string;
+  createdAt?: string;
 };
 
 /** Student-facing dashboard with a daily challenge call to action and mock performance stats. */
@@ -71,6 +75,7 @@ export class StudentView {
   constructor() {
     this.layoutNavigation.clearContext();
     this.titleService.setTitle('Student Dashboard');
+    void this.loadPersistedSources();
   }
 
   protected isQuizRouteActive(): boolean {
@@ -133,12 +138,14 @@ export class StudentView {
         return;
       }
 
-      const quiz = await this.striveQuizService.uploadPdfAndGenerateQuiz(
-        quizActivity.id,
-        source.file,
-        5,
-      );
-
+      const quiz =
+        source.sourceId !== undefined
+          ? await this.striveQuizService.createSourceQuiz(source.sourceId, 5)
+          : await this.striveQuizService.uploadPdfAndGenerateQuiz(
+              quizActivity.id,
+              this.requireSelectedSourceFile(source),
+              5,
+            );
       this.striveQuizService.setPendingSourceQuiz(quiz);
       this.sourceStatusMessage.set(`Created a 5-question source-based quiz from "${source.name}".`);
       await this.router.navigate(['daily-practice'], {
@@ -150,6 +157,36 @@ export class StudentView {
     } finally {
       this.creatingSourceQuiz.set(false);
     }
+  }
+
+  private async loadPersistedSources(): Promise<void> {
+    try {
+      const sources = await this.striveQuizService.listSources();
+      this.uploadedSources.update((existing) => [
+        ...sources.map((source) => this.toUploadedSource(source)),
+        ...existing.filter((source) => source.file !== undefined),
+      ]);
+    } catch {
+      // Keep the dashboard usable even if saved sources cannot be loaded yet.
+    }
+  }
+
+  private toUploadedSource(source: SourceSummary): UploadedSource {
+    return {
+      sourceId: source.source_id,
+      activityId: source.activity_id,
+      contentType: source.content_type,
+      createdAt: source.created_at,
+      name: source.filename ?? `Source ${source.source_id}`,
+    };
+  }
+
+  private requireSelectedSourceFile(source: UploadedSource): File {
+    if (source.file === undefined) {
+      throw new Error('Selected source file is unavailable.');
+    }
+
+    return source.file;
   }
 
   private averageScoreLabel(): string {

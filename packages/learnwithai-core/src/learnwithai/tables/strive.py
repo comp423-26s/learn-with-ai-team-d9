@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, ClassVar
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, LargeBinary, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -86,6 +86,30 @@ class StriveSubmission(SQLModel, table=True):
     status: str = Field(default="pending", sa_column=Column(String, nullable=False))
     started_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     completed_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False),
+        default=None,
+    )
+
+
+class StriveSource(SQLModel, table=True):
+    """Persisted source material uploaded for a Strive quiz."""
+
+    __tablename__: ClassVar[str] = "strive_source"  # type: ignore[override]
+
+    id: int | None = Field(
+        default=None,
+        sa_column=Column(Integer, primary_key=True, autoincrement=True),
+    )
+    student_pid: int = Field(
+        sa_column=Column(Integer, ForeignKey("user.pid"), nullable=False, index=True),
+    )
+    activity_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("activity.id"), nullable=False, index=True),
+    )
+    filename: str | None = Field(default=None, sa_column=Column(String, nullable=True))
+    content_type: str = Field(sa_column=Column(String, nullable=False))
+    pdf_bytes: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False),
         default=None,

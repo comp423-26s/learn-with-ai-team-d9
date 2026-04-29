@@ -21,6 +21,7 @@ from learnwithai.repositories.async_job_repository import AsyncJobRepository
 from learnwithai.repositories.course_repository import CourseRepository
 from learnwithai.repositories.membership_repository import MembershipRepository
 from learnwithai.repositories.strive_repository import StriveRepository
+from learnwithai.repositories.strive_source_repository import StriveSourceRepository
 from learnwithai.repositories.submission_repository import SubmissionRepository
 from learnwithai.repositories.user_repository import UserRepository
 from learnwithai.services.activity_service import ActivityService
@@ -80,7 +81,9 @@ __all__ = [
     "iyow_submission_repository_factory",
     "iyow_submission_service_factory",
     "StriveRepositoryDI",
+    "StriveSourceRepositoryDI",
     "strive_repository_factory",
+    "strive_source_repository_factory",
     "strive_service_factory",
     "StriveServiceDI",
     "joke_generation_service_factory",
@@ -342,9 +345,19 @@ def strive_repository_factory(session: SessionDI) -> StriveRepository:
 StriveRepositoryDI: TypeAlias = Annotated[StriveRepository, Depends(strive_repository_factory)]
 
 
-def strive_service_factory(strive_repo: StriveRepositoryDI) -> StriveService:
+def strive_source_repository_factory(session: SessionDI) -> StriveSourceRepository:
+    """Constructs the Strive source repository bound to the current request session."""
+    return StriveSourceRepository(session)
+
+
+StriveSourceRepositoryDI: TypeAlias = Annotated[StriveSourceRepository, Depends(strive_source_repository_factory)]
+
+
+def strive_service_factory(
+    strive_repo: StriveRepositoryDI, strive_source_repo: StriveSourceRepositoryDI
+) -> StriveService:
     """Creates the Strive service for the current request."""
-    return StriveService(strive_repo)
+    return StriveService(strive_repo, strive_source_repo)
 
 
 StriveServiceDI: TypeAlias = Annotated[StriveService, Depends(strive_service_factory)]

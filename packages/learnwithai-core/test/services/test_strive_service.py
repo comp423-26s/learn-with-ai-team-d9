@@ -206,7 +206,8 @@ def test_generate_questions_uses_source_aware_prompt() -> None:
 
     assert len(result) == 1
     prompt = mock_create.call_args.kwargs["messages"][1]["content"]
-    assert "Base questions and answers on the SOURCE CONTENT below." in prompt
+    assert "database-backed" in prompt
+    assert "SOURCE DOCUMENTS retrieved from the database-backed" in prompt
     assert "Functions return values." in prompt
 
 
@@ -225,7 +226,7 @@ def test_generate_questions_without_sources_uses_backup_prompt() -> None:
     assert len(result) == 1
     prompt = mock_create.call_args.kwargs["messages"][1]["content"]
     assert "beginner-level Python multiple-choice questions" in prompt
-    assert "SOURCE CONTENT" not in prompt
+    assert "DATABASE SOURCE DOCUMENTS" not in prompt
 
 
 def test_extract_study_material_from_pdf_returns_json_payload() -> None:
@@ -428,6 +429,21 @@ def test_reusable_submission_filters_mismatched_metadata() -> None:
 
 def test_generate_quiz_from_pdf_success(tmp_path: Any) -> None:
     svc = StriveService()
+    source_repo = MagicMock()
+    persisted_source: Any = type(
+        "Source",
+        (),
+        {
+            "id": 321,
+            "filename": "lesson-notes.pdf",
+            "content_type": "application/pdf",
+            "created_at": datetime(2026, 4, 20, tzinfo=timezone.utc),
+            "pdf_bytes": b"%PDF-1.4 test",
+        },
+    )()
+    source_repo.create_source.return_value = persisted_source
+    source_repo.list_by_student_and_activity.return_value = [persisted_source]
+    svc.source_repo = source_repo
     subject = cast(User, type("U", (), {"pid": 77})())
     activity = cast(Activity, type("A", (), {"id": 55})())
     pdf_bytes = b"%PDF-1.4 test"
@@ -436,49 +452,140 @@ def test_generate_quiz_from_pdf_success(tmp_path: Any) -> None:
     study_material = {"schema_version": 1, "source_type": "pdf", "text": "A source excerpt."}
 
     with (
-        patch("learnwithai.services.strive_service.os.makedirs"),
-        patch("builtins.open", MagicMock()),
         patch.object(svc, "extract_study_material_from_pdf", return_value=study_material) as extract_mock,
         patch.object(svc, "_generate_questions_with_llm", return_value=questions) as gen_mock,
     ):
         result = svc.generate_quiz_from_pdf(subject=subject, activity=activity, pdf_bytes=pdf_bytes, question_count=3)
 
-    extract_mock.assert_called_once_with(pdf_bytes)
+    extract_mock.assert_called_once_with(persisted_source.pdf_bytes)
     gen_mock.assert_called_once()
     assert gen_mock.call_args.kwargs["qcount"] == 3
-    assert json.loads(gen_mock.call_args.kwargs["source_excerpt"]) == study_material
+    source_excerpt = json.loads(gen_mock.call_args.kwargs["source_excerpt"])
+    assert source_excerpt["retrieved_from"] == "database-backed_strive_source_store"
+    assert len(source_excerpt["sources"]) == 1
+    assert source_excerpt["sources"][0]["source_id"] == 321
+    assert source_excerpt["sources"][0]["filename"] == "lesson-notes.pdf"
+    assert source_excerpt["sources"][0]["study_material"] == study_material
 
     assert result["student_pid"] == 77
     assert result["activity_id"] == 55
     assert result["status"] == "in_progress"
     assert result["question_count"] == 3
     assert result["mode"] == "module"
+    assert result["source_id"] == 321
     assert len(result["questions"]) == 3
     # public questions must not include correct_choice_id
     for q in result["questions"]:
         assert "correct_choice_id" not in q
     assert result["id"] in strive_service_module._QUIZ_STORE
+    source_repo.create_source.assert_called_once()
+    created_source = source_repo.create_source.call_args.args[0]
+    assert created_source.student_pid == 77
+    assert created_source.activity_id == 55
+    assert created_source.pdf_bytes == pdf_bytes
 
 
 def test_generate_quiz_from_pdf_llm_fallback(tmp_path: Any) -> None:
     svc = StriveService()
+    source_repo = MagicMock()
+    persisted_source = type(
+        "Source",
+        (),
+        {
+            "id": 654,
+            "filename": "fallback.pdf",
+            "content_type": "application/pdf",
+            "created_at": datetime(2026, 4, 20, tzinfo=timezone.utc),
+            "pdf_bytes": b"%PDF-1.4 test",
+        },
+    )()
+    source_repo.create_source.return_value = persisted_source
+    source_repo.list_by_student_and_activity.return_value = [persisted_source]
+    svc.source_repo = source_repo
     subject = cast(User, type("U", (), {"pid": 88})())
     activity = cast(Activity, type("A", (), {"id": 66})())
     pdf_bytes = b"%PDF-1.4 test"
 
     with (
-        patch("learnwithai.services.strive_service.os.makedirs"),
-        patch("builtins.open", MagicMock()),
         patch.object(svc, "extract_study_material_from_pdf", return_value={"text": "A"}),
         patch.object(svc, "_generate_questions_with_llm", side_effect=RuntimeError("LLM down")),
     ):
         result = svc.generate_quiz_from_pdf(subject=subject, activity=activity, pdf_bytes=pdf_bytes, question_count=2)
 
     assert result["question_count"] == 2
+    assert result["source_id"] == 654
     assert len(result["questions"]) == 2
     for q in result["questions"]:
         assert "PDF source" in q["text"]
         assert len(q["choices"]) == 4
+
+
+def test_list_uploaded_sources_returns_saved_sources() -> None:
+    svc = StriveService()
+    source_repo = MagicMock()
+    saved_source: Any = type(
+        "Source",
+        (),
+        {
+            "id": 901,
+            "activity_id": 44,
+            "filename": "notes.pdf",
+            "content_type": "application/pdf",
+            "created_at": datetime(2026, 4, 20, tzinfo=timezone.utc),
+        },
+    )()
+    source_repo.list_by_student.return_value = [saved_source]
+    svc.source_repo = source_repo
+    subject = cast(User, type("U", (), {"pid": 123})())
+
+    sources = svc.list_uploaded_sources(subject)
+
+    assert sources == [
+        {
+            "source_id": 901,
+            "activity_id": 44,
+            "filename": "notes.pdf",
+            "content_type": "application/pdf",
+            "created_at": saved_source.created_at,
+        }
+    ]
+    source_repo.list_by_student.assert_called_once_with(123)
+
+
+def test_generate_quiz_from_source_uses_saved_source_row() -> None:
+    svc = StriveService()
+    source_repo = MagicMock()
+    saved_source: Any = type(
+        "Source",
+        (),
+        {
+            "id": 777,
+            "activity_id": 88,
+            "student_pid": 456,
+            "filename": "saved.pdf",
+            "content_type": "application/pdf",
+            "created_at": datetime(2026, 4, 20, tzinfo=timezone.utc),
+            "pdf_bytes": b"%PDF-1.4 test",
+        },
+    )()
+    source_repo.get_by_id.return_value = saved_source
+    svc.source_repo = source_repo
+    subject = cast(User, type("U", (), {"pid": 456})())
+
+    with (
+        patch.object(svc, "extract_study_material_from_pdf", return_value={"text": "A saved source"}) as extract_mock,
+        patch.object(svc, "_generate_questions_with_llm", return_value=_mock_questions(2)) as gen_mock,
+    ):
+        result = svc.generate_quiz_from_source(subject=subject, source_id=777, question_count=2)
+
+    extract_mock.assert_called_once_with(saved_source.pdf_bytes)
+    gen_mock.assert_called_once()
+    assert gen_mock.call_args.kwargs["qcount"] == 2
+    assert "database-backed_strive_source_store" in gen_mock.call_args.kwargs["source_excerpt"]
+    assert result["source_id"] == 777
+    assert result["activity_id"] == 88
+    assert result["student_pid"] == 456
+    source_repo.get_by_id.assert_called_once_with(777)
 
 
 def test_get_and_submit_reject_other_student() -> None:
@@ -505,3 +612,93 @@ def test_get_and_submit_reject_other_student() -> None:
         raise AssertionError("expected PermissionError")
     except PermissionError:
         pass
+
+
+def test_list_uploaded_sources_no_repo() -> None:
+    svc = StriveService()
+    subject = cast(User, type("U", (), {"pid": 1})())
+    with pytest.raises(RuntimeError):
+        svc.list_uploaded_sources(subject)
+
+
+def test_store_uploaded_source_no_repo() -> None:
+    svc = StriveService()
+    subject = cast(User, type("U", (), {"pid": 1})())
+    activity = cast(Activity, type("A", (), {"id": 1})())
+    with pytest.raises(RuntimeError):
+        svc._store_uploaded_source(
+            subject, activity, b"pdf", source_filename="f.pdf", source_content_type="application/pdf"
+        )
+
+
+def test_build_source_context_no_repo() -> None:
+    svc = StriveService()
+    with pytest.raises(RuntimeError):
+        svc._build_source_context_from_sources([])
+
+
+def test_build_source_context_empty_sources() -> None:
+    svc = StriveService()
+    svc.source_repo = MagicMock()  # type: ignore[assignment]
+    with pytest.raises(ValueError, match="No persisted source context"):
+        svc._build_source_context_from_sources([])
+
+
+def test_generate_quiz_from_source_no_repo() -> None:
+    svc = StriveService()
+    subject = cast(User, type("U", (), {"pid": 1})())
+    with pytest.raises(RuntimeError):
+        svc.generate_quiz_from_source(subject=subject, source_id=1)
+
+
+def test_generate_quiz_from_source_not_found() -> None:
+    svc = StriveService()
+    source_repo = MagicMock()
+    source_repo.get_by_id.return_value = None
+    svc.source_repo = source_repo  # type: ignore[assignment]
+    subject = cast(User, type("U", (), {"pid": 1})())
+    with pytest.raises(KeyError):
+        svc.generate_quiz_from_source(subject=subject, source_id=99)
+
+
+def test_generate_quiz_from_source_permission_denied() -> None:
+    svc = StriveService()
+    source_repo = MagicMock()
+    saved_source: Any = type("Source", (), {"id": 1, "student_pid": 999, "activity_id": 1})()
+    source_repo.get_by_id.return_value = saved_source
+    svc.source_repo = source_repo  # type: ignore[assignment]
+    subject = cast(User, type("U", (), {"pid": 1})())
+    with pytest.raises(PermissionError):
+        svc.generate_quiz_from_source(subject=subject, source_id=1)
+
+
+def test_generate_quiz_from_source_llm_fallback() -> None:
+    svc = StriveService()
+    source_repo = MagicMock()
+    saved_source: Any = type(
+        "Source",
+        (),
+        {
+            "id": 42,
+            "student_pid": 7,
+            "activity_id": 3,
+            "filename": "notes.pdf",
+            "content_type": "application/pdf",
+            "created_at": datetime(2026, 4, 20, tzinfo=timezone.utc),
+            "pdf_bytes": b"%PDF-1.4 test",
+        },
+    )()
+    source_repo.get_by_id.return_value = saved_source
+    svc.source_repo = source_repo  # type: ignore[assignment]
+    subject = cast(User, type("U", (), {"pid": 7})())
+
+    with (
+        patch.object(svc, "extract_study_material_from_pdf", return_value={"text": "X"}),
+        patch.object(svc, "_generate_questions_with_llm", side_effect=RuntimeError("LLM down")),
+    ):
+        result = svc.generate_quiz_from_source(subject=subject, source_id=42, question_count=2)
+
+    assert result["question_count"] == 2
+    assert len(result["questions"]) == 2
+    for q in result["questions"]:
+        assert "saved source" in q["text"]

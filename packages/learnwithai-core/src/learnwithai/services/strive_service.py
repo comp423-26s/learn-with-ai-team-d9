@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
-import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
@@ -10,7 +8,9 @@ from itertools import count
 from typing import Any, List
 
 from learnwithai.config import Settings, get_settings
+from learnwithai.repositories.strive_source_repository import StriveSourceRepository
 from learnwithai.tables.activity import Activity
+from learnwithai.tables.strive import StriveSource
 from learnwithai.tables.user import User
 from openai import OpenAI
 from PyPDF2 import PdfReader
@@ -99,7 +99,15 @@ class StriveService:
     suitable for production.
     """
 
-    def __init__(self, *_args: object, settings: Settings | None = None, **_kwargs: object) -> None:
+    def __init__(
+        self,
+        quiz_repo: object | None = None,
+        source_repo: StriveSourceRepository | None = None,
+        settings: Settings | None = None,
+        **_kwargs: object,
+    ) -> None:
+        self.quiz_repo = quiz_repo
+        self.source_repo = source_repo
         self.settings = settings or get_settings()
         self.client = OpenAI(
             api_key=self.settings.openai_api_key,
@@ -126,18 +134,89 @@ class StriveService:
         )
 
     def _build_source_aware_llm_prompt(self, qcount: int, source_excerpt: str) -> str:
-        """Build a concise prompt grounded in uploaded source content."""
+        """Build a concise prompt grounded in database-backed source content."""
         return (
             f"Generate exactly {qcount} beginner-level Python multiple-choice questions for students.\n"
-            "Base questions and answers on the SOURCE CONTENT below.\n"
-            "If needed, infer simple context but do not contradict the source.\n"
+            "Base questions and answers only on the SOURCE DOCUMENTS retrieved from the database-backed\n"
+            "Strive source store below. Do not rely on filesystem paths or attempt to fetch files yourself.\n"
+            "If multiple sources are present, combine them consistently and do not contradict the stored text.\n"
             "Each question must have exactly 4 answer choices and one correct answer.\n"
             "Keep explanations brief (one sentence).\n"
             "Return ONLY valid JSON as an array with schema: "
             '[{"question":"string","choices":["string","string","string","string"],"correct_choice_index":0,"explanation":"string"}]\n'
-            "SOURCE CONTENT:\n"
+            "DATABASE SOURCE DOCUMENTS:\n"
             f"{source_excerpt}"
         )
+
+    def _build_source_context_from_sources(self, sources: list[StriveSource]) -> str:
+        """Load persisted source uploads into promptable JSON."""
+        if self.source_repo is None:
+            raise RuntimeError("StriveSourceRepository not configured.")
+
+        database_sources: list[dict[str, Any]] = []
+
+        for source in sources:
+            study_material = self.extract_study_material_from_pdf(source.pdf_bytes)
+            database_sources.append(
+                {
+                    "source_id": source.id,
+                    "filename": source.filename,
+                    "content_type": source.content_type,
+                    "created_at": source.created_at.isoformat() if source.created_at is not None else None,
+                    "study_material": study_material,
+                }
+            )
+
+        if not database_sources:
+            raise ValueError("No persisted source context is available for this activity.")
+
+        return json.dumps(
+            {
+                "retrieved_from": "database-backed_strive_source_store",
+                "sources": database_sources,
+            },
+            sort_keys=True,
+        )
+
+    def list_uploaded_sources(self, subject: User) -> list[dict[str, Any]]:
+        """Return persisted source summaries for the current student."""
+        if self.source_repo is None:
+            raise RuntimeError("StriveSourceRepository not configured.")
+
+        sources = self.source_repo.list_by_student(subject.pid)
+        return [
+            {
+                "source_id": source.id,
+                "activity_id": source.activity_id,
+                "filename": source.filename,
+                "content_type": source.content_type,
+                "created_at": source.created_at,
+            }
+            for source in sources
+        ]
+
+    def _store_uploaded_source(
+        self,
+        subject: User,
+        activity: Activity,
+        pdf_bytes: bytes,
+        *,
+        source_filename: str | None,
+        source_content_type: str,
+    ) -> StriveSource:
+        """Persist an uploaded source and return the database row."""
+        if self.source_repo is None:
+            raise RuntimeError("StriveSourceRepository not configured.")
+
+        assert activity.id is not None, "Activity must be persisted before uploading a source"
+        source = StriveSource(
+            student_pid=subject.pid,
+            activity_id=activity.id,
+            filename=source_filename,
+            content_type=source_content_type,
+            pdf_bytes=pdf_bytes,
+        )
+        return self.source_repo.create_source(source)
 
     def extract_study_material_from_pdf(self, pdf_bytes: bytes, max_chars: int = 12000) -> dict[str, Any]:
         """Extract PDF content into a JSON-serializable study material payload.
@@ -367,26 +446,30 @@ class StriveService:
         )
 
     def generate_quiz_from_pdf(
-        self, subject: User, activity: Activity, pdf_bytes: bytes, question_count: int = 5
+        self,
+        subject: User,
+        activity: Activity,
+        pdf_bytes: bytes,
+        question_count: int = 5,
+        *,
+        source_filename: str | None = None,
+        source_content_type: str = "application/pdf",
     ) -> dict[str, Any]:
         """Save uploaded PDF and generate a quiz synchronously from it.
 
-        This is a lightweight dev implementation: it persist the uploaded
-        file to `data/uploads/strive/` with a UUID filename and then
-        generates questions using the existing LLM helper. It stores the
-        submission and questions in the in-memory `_QUIZ_STORE` so other
-        endpoints (GET/submit) continue to work.
+        The uploaded source is stored in the database so the user can revisit
+        it later, and the generated quiz still uses the in-memory store for
+        the existing quiz flow.
         """
-        # Persist upload
-        uploads_dir = os.path.join("data", "uploads", "strive")
-        os.makedirs(uploads_dir, exist_ok=True)
-        filename = f"{uuid.uuid4().hex}.pdf"
-        path = os.path.join(uploads_dir, filename)
-        with open(path, "wb") as fh:
-            fh.write(pdf_bytes)
+        source = self._store_uploaded_source(
+            subject,
+            activity,
+            pdf_bytes,
+            source_filename=source_filename,
+            source_content_type=source_content_type,
+        )
 
-        study_material = self.extract_study_material_from_pdf(pdf_bytes)
-        source_excerpt = json.dumps(study_material, sort_keys=True)
+        source_excerpt = self._build_source_context_from_sources([source])
 
         # Try to generate questions using the existing LLM helper. If the
         # environment is not configured for OpenAI (no API key or network),
@@ -426,12 +509,71 @@ class StriveService:
                 "mode": "module",
                 "module_name": None,
                 "topic": None,
-                "source_path": path,
+                "source_id": source.id,
             },
             "questions": questions,
         }
 
         # Return the public-facing quiz shape (strip correct answers)
+        public_questions = [
+            {"question_id": q["question_id"], "text": q["text"], "choices": q["choices"]} for q in questions
+        ]
+
+        return {**_QUIZ_STORE[submission_id]["submission"], "questions": public_questions}
+
+    def generate_quiz_from_source(self, subject: User, source_id: int, question_count: int = 5) -> dict[str, Any]:
+        """Generate a quiz from a previously stored source."""
+        if self.source_repo is None:
+            raise RuntimeError("StriveSourceRepository not configured.")
+
+        source = self.source_repo.get_by_id(source_id)
+        if source is None:
+            raise KeyError("source not found")
+
+        if source.student_pid != subject.pid:
+            raise PermissionError("not allowed")
+
+        source_excerpt = self._build_source_context_from_sources([source])
+
+        try:
+            questions = self._generate_questions_with_llm(qcount=question_count, source_excerpt=source_excerpt)
+        except Exception:
+            questions = []
+            for i in range(1, question_count + 1):
+                questions.append(
+                    {
+                        "question_id": i,
+                        "text": f"Sample question {i} (saved source)",
+                        "choices": [
+                            {"id": 1, "text": "Choice A"},
+                            {"id": 2, "text": "Choice B"},
+                            {"id": 3, "text": "Choice C"},
+                            {"id": 4, "text": "Choice D"},
+                        ],
+                        "correct_choice_id": 1,
+                        "explanation": "Placeholder explanation.",
+                    }
+                )
+
+        submission_id = next(_NEXT_ID)
+        started_at = datetime.now(timezone.utc)
+
+        _QUIZ_STORE[submission_id] = {
+            "submission": {
+                "id": submission_id,
+                "activity_id": source.activity_id,
+                "student_pid": subject.pid,
+                "status": "in_progress",
+                "started_at": started_at,
+                "question_count": question_count,
+                "mode": "module",
+                "module_name": None,
+                "topic": None,
+                "source_id": source.id,
+            },
+            "questions": questions,
+        }
+
         public_questions = [
             {"question_id": q["question_id"], "text": q["text"], "choices": q["choices"]} for q in questions
         ]

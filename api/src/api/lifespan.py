@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from learnwithai.config import Settings
+from learnwithai.db import create_db_and_tables
 
 from api.realtime import JobUpdateManager, consume_job_updates
 from api.routes import ws as ws_route_module
@@ -32,10 +33,14 @@ logger = logging.getLogger(__name__)
 async def _lifespan_context(application: FastAPI) -> AsyncIterator[None]:
     """Manages startup and shutdown of background resources.
 
-    Starts the RabbitMQ consumer background task on startup and
-    cancels it on shutdown.  Skips the consumer in test environments
-    where RabbitMQ is not available.
+    Creates any missing SQLModel tables on startup, then starts the RabbitMQ
+    consumer background task. Skips the consumer in test environments where
+    RabbitMQ is not available.
     """
+    del application
+
+    create_db_and_tables()
+
     manager = JobUpdateManager()
     ws_route_module.configure(manager)
 
