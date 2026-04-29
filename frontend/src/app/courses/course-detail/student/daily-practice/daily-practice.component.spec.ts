@@ -122,6 +122,8 @@ describe('DailyPractice', () => {
       activityList?: Activity[];
       routeCourseId?: string | null;
       quizMode?: 'daily' | 'source';
+      activityId?: string | null;
+      getActivity?: (courseId: number, activityId: number) => Promise<Activity>;
       loadActivities?: () => Promise<Activity[]>;
       startQuizResponse?: QuizCreateResponse;
       getQuizResponse?: QuizQuestionsResponse;
@@ -136,11 +138,19 @@ describe('DailyPractice', () => {
     const activityList = options.activityList ?? [fakeStriveActivity];
 
     const mockActivityService = {
+      get: vi.fn(
+        options.getActivity ??
+          ((_: number, activityId: number) =>
+            Promise.resolve(
+              activityList.find((activity) => activity.id === activityId) ?? activityList[0],
+            )),
+      ),
       list: vi.fn(() => options.loadActivities?.() ?? Promise.resolve(activityList)),
     };
 
     const routeCourseId = options.routeCourseId === undefined ? '1' : options.routeCourseId;
     const quizMode = options.quizMode ?? 'daily';
+    const activityId = options.activityId === undefined ? null : options.activityId;
 
     const mockQuizService = {
       startQuiz: vi.fn(() => Promise.resolve(options.startQuizResponse ?? fakeCreateResponse)),
@@ -152,7 +162,11 @@ describe('DailyPractice', () => {
     const mockRoute = {
       snapshot: {
         queryParamMap: {
-          get: (key: string) => (key === 'mode' && quizMode === 'source' ? 'source' : null),
+          get: (key: string) => {
+            if (key === 'mode' && quizMode === 'source') return 'source';
+            if (key === 'activityId') return activityId;
+            return null;
+          },
         },
       },
       parent: {
@@ -218,6 +232,49 @@ describe('DailyPractice', () => {
     expect(mockQuizService.startQuiz).not.toHaveBeenCalled();
     expect(fixture.nativeElement.textContent).toContain(
       'No source-based quiz is ready. Add sources from the dashboard first.',
+    );
+  });
+
+  it('should load a specific strive activity when activityId is provided', async () => {
+    const { fixture, mockQuizService, mockActivityService } = setup({ activityId: '7' });
+    await flush();
+    fixture.detectChanges();
+
+    expect(mockActivityService.list).not.toHaveBeenCalled();
+    expect(mockQuizService.startQuiz).toHaveBeenCalledWith(7, {
+      mode: 'daily',
+      question_count: 5,
+    });
+    expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
+  });
+
+  it('should ignore an invalid activityId and fall back to course activities list', async () => {
+    const { fixture, mockQuizService, mockActivityService } = setup({ activityId: 'invalid' });
+    await flush();
+    fixture.detectChanges();
+
+    expect(mockActivityService.get).not.toHaveBeenCalled();
+    expect(mockActivityService.list).toHaveBeenCalledWith(1);
+    expect(mockQuizService.startQuiz).toHaveBeenCalledWith(7, {
+      mode: 'daily',
+      question_count: 5,
+    });
+    expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
+  });
+
+  it('should show an error when specific activity lookup returns null', async () => {
+    const { fixture, mockQuizService, mockActivityService } = setup({
+      activityId: '7',
+      getActivity: () => Promise.resolve(null as unknown as Activity),
+    });
+    await flush();
+    fixture.detectChanges();
+
+    expect(mockActivityService.get).toHaveBeenCalledWith(1, 7);
+    expect(mockQuizService.startQuiz).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Quiz unavailable');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Unable to load challenge questions because no course activities exist.',
     );
   });
 

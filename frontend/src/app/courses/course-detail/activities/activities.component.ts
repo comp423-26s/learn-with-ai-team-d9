@@ -52,7 +52,19 @@ export class Activities {
   }
 
   protected activityLink(activity: Activity): string[] {
-    return this.isStaff() ? [String(activity.id)] : [String(activity.id), 'submit'];
+    if (this.isStaff()) {
+      return [String(activity.id)];
+    }
+
+    if (activity.type === 'strive') {
+      return ['/courses', String(this.courseId), 'student'];
+    }
+
+    return [String(activity.id), 'submit'];
+  }
+
+  protected activityQueryParams(): Record<string, string> {
+    return {};
   }
 
   private async loadData(): Promise<void> {

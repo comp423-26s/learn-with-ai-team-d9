@@ -126,4 +126,34 @@ describe('Activities', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Late Activity');
   });
+
+  it('should route student Strive activities to the student dashboard', async () => {
+    const { fixture } = setup({
+      courseService: {
+        getMyCourses: vi.fn(() => Promise.resolve([{ id: 1, membership: { type: 'student' } }])),
+      },
+      activityService: {
+        list: vi.fn(() =>
+          Promise.resolve([
+            {
+              id: 10,
+              title: 'Daily Strive Challenge',
+              type: 'strive',
+              due_date: '2025-12-01T00:00:00Z',
+              release_date: '2025-11-01T00:00:00Z',
+              late_date: null,
+              course_id: 1,
+              created_at: '2025-11-01T00:00:00Z',
+            },
+          ]),
+        ),
+      },
+    });
+    await flush();
+    fixture.detectChanges();
+
+    const link = fixture.nativeElement.querySelector('a[href]') as HTMLAnchorElement;
+    expect(link).toBeTruthy();
+    expect(link.getAttribute('href') ?? '').toContain('/courses/1/student');
+  });
 });

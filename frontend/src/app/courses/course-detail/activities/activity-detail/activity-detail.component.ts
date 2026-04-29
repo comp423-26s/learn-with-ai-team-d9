@@ -25,7 +25,7 @@ import { JobUpdateService } from '../../../../job-update.service';
 import { LayoutNavigationService } from '../../../../layout/layout-navigation.service';
 import { ActivityService } from '../activity.service';
 import { buildActivityContextNav } from '../activity-nav';
-import { IyowActivity, StudentSubmissionRow } from '../../../../api/models';
+import { Activity, StudentSubmissionRow } from '../../../../api/models';
 
 const DEBOUNCE_MS = 300;
 const MIN_SEARCH_LENGTH = 3;
@@ -58,7 +58,7 @@ export class ActivityDetail implements OnDestroy {
   protected readonly courseId: number;
   protected readonly activityId: number;
   protected readonly dateTimeFormat = 'MMM d, y, h:mm a';
-  protected readonly activity = signal<IyowActivity | null>(null);
+  protected readonly activity = signal<Activity | null>(null);
   protected readonly allRows = signal<StudentSubmissionRow[]>([]);
   protected readonly loaded = signal(false);
   protected readonly errorMessage = signal('');
@@ -127,13 +127,9 @@ export class ActivityDetail implements OnDestroy {
 
   private async loadData(): Promise<void> {
     try {
-      const [activity, roster] = await Promise.all([
-        this.activityService.get(this.courseId, this.activityId),
-        this.activityService.listSubmissionsRoster(this.courseId, this.activityId),
-      ]);
+      const activity = await this.activityService.get(this.courseId, this.activityId);
       this.activity.set(activity);
       this.titleService.setTitle(activity.title);
-      this.allRows.set(roster);
       this.layoutNavigation.setContextSection(
         buildActivityContextNav({
           courseId: this.courseId,
@@ -141,6 +137,16 @@ export class ActivityDetail implements OnDestroy {
           role: 'staff',
         }),
       );
+
+      if (activity.type === 'iyow') {
+        const roster = await this.activityService.listSubmissionsRoster(
+          this.courseId,
+          this.activityId,
+        );
+        this.allRows.set(roster);
+      } else {
+        this.allRows.set([]);
+      }
     } catch {
       this.errorMessage.set('Failed to load activity details.');
       this.layoutNavigation.clearContext();
