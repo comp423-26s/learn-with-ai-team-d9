@@ -64,7 +64,7 @@ export class StudentView {
     {
       label: 'Average',
       value: this.averageScoreLabel(),
-      description: 'Average score across recent daily challenges',
+      description: 'Average score across recent daily challenge attempts',
     },
   ]);
 
