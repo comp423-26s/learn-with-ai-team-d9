@@ -127,7 +127,7 @@ describe('Activities', () => {
     expect(fixture.nativeElement.textContent).toContain('Late Activity');
   });
 
-  it('should route student Strive activities to the student dashboard', async () => {
+  it('should route student Strive activities to the strive-submit page', async () => {
     const { fixture } = setup({
       courseService: {
         getMyCourses: vi.fn(() => Promise.resolve([{ id: 1, membership: { type: 'student' } }])),
@@ -154,6 +154,6 @@ describe('Activities', () => {
 
     const link = fixture.nativeElement.querySelector('a[href]') as HTMLAnchorElement;
     expect(link).toBeTruthy();
-    expect(link.getAttribute('href') ?? '').toContain('/courses/1/student');
+    expect(link.getAttribute('href') ?? '').toContain('/strive-submit');
   });
 });

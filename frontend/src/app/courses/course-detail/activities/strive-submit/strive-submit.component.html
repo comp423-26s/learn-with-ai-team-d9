@@ -1,0 +1,219 @@
+<!--
+  Copyright (c) 2026 Kris Jordan
+  SPDX-License-Identifier: MIT
+-->
+
+@if (!loaded()) {
+  <p class="text-sm opacity-75">Loading...</p>
+} @else if (loadError()) {
+  <p role="alert">{{ loadError() }}</p>
+} @else {
+  @if (activity(); as a) {
+    <p class="mb-6 text-sm font-medium opacity-70">Due {{ a.due_date | date: dateTimeFormat }}</p>
+  }
+
+  @if (!quizMode()) {
+    <!-- Mode selection — mirrors student dashboard layout -->
+    <section class="grid gap-6 lg:grid-cols-[2fr_1fr]" aria-label="Choose quiz mode">
+      <section class="space-y-6" aria-label="Standard quiz">
+        <header class="space-y-3">
+          <p class="text-sm font-medium tracking-[0.08em] uppercase opacity-80">Standard Quiz</p>
+          <p class="max-w-3xl text-base opacity-90">
+            Answer 5 questions generated from course material. Your score is recorded toward your
+            activity progress.
+          </p>
+        </header>
+
+        <mat-card appearance="outlined" class="w-fit">
+          <mat-card-content class="space-y-1">
+            <p class="text-sm font-medium opacity-75">Average</p>
+            <p class="text-2xl font-semibold">{{ averageScoreLabel() }}</p>
+            <p class="text-sm opacity-75">Average score across recent quizzes</p>
+          </mat-card-content>
+        </mat-card>
+
+        <div class="rounded-md border border-dashed px-4 py-3">
+          <p class="mb-2 text-sm opacity-80">Standard mode</p>
+          <button mat-flat-button color="primary" type="button" (click)="selectStandardMode()">
+            Start Quiz
+          </button>
+        </div>
+      </section>
+
+      <aside aria-label="Source-based quiz" class="space-y-4 rounded-lg border p-4 lg:border-l-2">
+        <header class="space-y-1">
+          <p class="text-sm font-medium tracking-[0.08em] uppercase opacity-80">Source Context</p>
+          <p class="text-sm opacity-80">Generate questions from your own material.</p>
+        </header>
+
+        <mat-card appearance="outlined">
+          <mat-card-content class="space-y-3">
+            <p class="text-sm font-medium opacity-90">Upload a source PDF</p>
+            <p class="text-sm opacity-80">
+              Upload a PDF and get 5 questions grounded in that content.
+            </p>
+
+            <div class="space-y-2">
+              <label class="text-sm font-medium" for="strive-source-upload">Source PDF</label>
+              <input
+                #pdfFileInput
+                id="strive-source-upload"
+                type="file"
+                accept="application/pdf"
+                (change)="onPdfFileSelected($event)"
+                class="hidden"
+              />
+              <button
+                mat-flat-button
+                color="accent"
+                type="button"
+                (click)="pdfFileInput.click()"
+                class="w-full"
+              >
+                Choose PDF File
+              </button>
+              @if (selectedPdfFileName()) {
+                <p class="text-center text-sm opacity-80">
+                  Selected: <span class="font-medium">{{ selectedPdfFileName() }}</span>
+                </p>
+              }
+            </div>
+
+            @if (pdfStatusMessage()) {
+              <p class="text-xs opacity-80" role="status">{{ pdfStatusMessage() }}</p>
+            }
+
+            <button
+              mat-stroked-button
+              color="primary"
+              type="button"
+              (click)="generatePdfQuiz()"
+              [disabled]="selectedPdfFile() === null || generatingPdfQuiz()"
+            >
+              @if (generatingPdfQuiz()) {
+                Creating Quiz...
+              } @else {
+                Create Source-Based Quiz (5 Questions)
+              }
+            </button>
+          </mat-card-content>
+        </mat-card>
+      </aside>
+    </section>
+  } @else {
+    <!-- Quiz in progress or complete -->
+    <section class="space-y-6" aria-label="Strive quiz">
+      <mat-card appearance="outlined">
+        <mat-card-content class="space-y-2">
+          <p class="text-sm font-medium tracking-[0.08em] uppercase opacity-80">
+            @if (quizMode() === 'pdf') {
+              Source-Based Quiz
+            } @else {
+              Standard Quiz
+            }
+          </p>
+          <p class="text-base opacity-90">
+            Answer one question at a time and use Next to continue.
+          </p>
+          @if (message()) {
+            <p class="text-sm opacity-75" role="status">{{ message() }}</p>
+          }
+        </mat-card-content>
+      </mat-card>
+
+      @if (loading() || generatingPdfQuiz()) {
+        <mat-card appearance="outlined">
+          <mat-card-content>
+            <p class="text-base">Loading quiz questions...</p>
+          </mat-card-content>
+        </mat-card>
+      } @else if (complete()) {
+        <mat-card appearance="outlined">
+          <mat-card-content class="space-y-3">
+            <p class="text-lg font-semibold">Quiz complete</p>
+            @if (submissionResult(); as result) {
+              <p class="text-sm opacity-80">
+                Score: {{ scorePercent() }}% ({{ result.correct_count }}/{{ result.total_count }}
+                correct)
+              </p>
+            }
+            <p class="text-sm opacity-80">
+              You answered {{ answeredCount() }} out of {{ totalQuestions() }} questions.
+            </p>
+
+            @if (quiz(); as quizData) {
+              <section class="space-y-3" aria-label="Quiz feedback">
+                @for (question of quizData.questions; track question.question_id) {
+                  @if (feedbackByQuestionId().get(question.question_id); as feedback) {
+                    <article class="rounded-md border p-3">
+                      <p class="text-sm font-semibold">{{ question.text }}</p>
+                      <p class="text-sm opacity-90">
+                        @if (feedback.correct) {
+                          Correct
+                        } @else {
+                          Incorrect
+                        }
+                      </p>
+                      @if (!feedback.correct && feedback.explanation) {
+                        <p class="text-sm opacity-80">{{ feedback.explanation }}</p>
+                      }
+                    </article>
+                  }
+                }
+              </section>
+            }
+
+            <div class="flex justify-end">
+              <button mat-stroked-button type="button" (click)="tryAgain()">Try Again</button>
+            </div>
+          </mat-card-content>
+        </mat-card>
+      } @else if (currentQuestion(); as question) {
+        <mat-card appearance="outlined">
+          <mat-card-content class="space-y-4">
+            <p class="text-sm font-medium opacity-80">
+              Question {{ questionNumber() }} of {{ totalQuestions() }}
+            </p>
+            <p class="text-lg font-semibold">{{ question.text }}</p>
+
+            <mat-radio-group
+              class="grid gap-3"
+              [value]="selectedChoiceForCurrent()"
+              (change)="selectChoice(question.question_id, $event.value)"
+              aria-label="Multiple choice answers"
+            >
+              @for (choice of currentChoices(); track choice.id) {
+                <mat-radio-button class="rounded-md border p-3" [value]="choice.id">
+                  {{ choice.text }}
+                </mat-radio-button>
+              }
+            </mat-radio-group>
+
+            <div class="flex justify-end">
+              <button
+                mat-flat-button
+                color="primary"
+                type="button"
+                [disabled]="!hasAnsweredCurrent() || submitting()"
+                (click)="onNext()"
+              >
+                @if (submitting()) {
+                  Submitting...
+                } @else {
+                  {{ nextLabel() }}
+                }
+              </button>
+            </div>
+          </mat-card-content>
+        </mat-card>
+      } @else if (message()) {
+        <mat-card appearance="outlined">
+          <mat-card-content class="space-y-2">
+            <p class="text-lg font-semibold">Quiz unavailable</p>
+            <p class="text-sm opacity-80">{{ message() }}</p>
+          </mat-card-content>
+        </mat-card>
+      }
+    </section>
+  }
+}

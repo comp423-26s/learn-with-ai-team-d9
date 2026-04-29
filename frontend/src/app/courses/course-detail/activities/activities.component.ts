@@ -57,7 +57,13 @@ export class Activities {
     }
 
     if (activity.type === 'strive') {
-      return ['/courses', String(this.courseId), 'student'];
+      return [
+        '/courses',
+        String(this.courseId),
+        'activities',
+        String(activity.id),
+        'strive-submit',
+      ];
     }
 
     return [String(activity.id), 'submit'];
