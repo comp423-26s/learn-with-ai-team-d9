@@ -116,11 +116,9 @@ confirm() {
     esac
 }
 
-secret_value() {
-    local secret_name="$1"
-    local key="$2"
-
-    oc get secret "$secret_name" -n "$NAMESPACE" -o "go-template={{index .data \"$key\"}}" | base64 -d
+postgres_env_value() {
+    local key="$1"
+    oc exec deployment/learnwithai-postgres -n "$NAMESPACE" -- printenv "$key" 2>/dev/null
 }
 
 wait_for_scaledown() {
@@ -141,11 +139,11 @@ info "Target namespace: $NAMESPACE"
 APP_REPLICAS="$(get_replicas learnwithai-app)"
 WORKER_REPLICAS="$(get_replicas learnwithai-worker)"
 
-POSTGRESQL_USER="$(secret_value learnwithai-postgres-credentials POSTGRESQL_USER)"
-POSTGRESQL_DATABASE="$(secret_value learnwithai-postgres-credentials POSTGRESQL_DATABASE)"
+POSTGRESQL_USER="$(postgres_env_value POSTGRESQL_USER)"
+POSTGRESQL_DATABASE="$(postgres_env_value POSTGRESQL_DATABASE)"
 
-[ -n "$POSTGRESQL_USER" ] || fail "Could not read POSTGRESQL_USER from secret learnwithai-postgres-credentials in namespace $NAMESPACE."
-[ -n "$POSTGRESQL_DATABASE" ] || fail "Could not read POSTGRESQL_DATABASE from secret learnwithai-postgres-credentials in namespace $NAMESPACE."
+[ -n "$POSTGRESQL_USER" ] || fail "Could not read POSTGRESQL_USER from postgres deployment env in namespace $NAMESPACE."
+[ -n "$POSTGRESQL_DATABASE" ] || fail "Could not read POSTGRESQL_DATABASE from postgres deployment env in namespace $NAMESPACE."
 
 APP_ENVIRONMENT="$(oc get deployment/learnwithai-app -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[?(@.name=="app")].env[?(@.name=="ENVIRONMENT")].value}' 2>/dev/null || true)"
 if [ -z "$APP_ENVIRONMENT" ]; then
