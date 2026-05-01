@@ -112,6 +112,7 @@ class StriveService:
         self.client = OpenAI(
             api_key=self.settings.openai_api_key,
             base_url=f"{self.settings.openai_endpoint.rstrip('/')}/openai/v1/",
+            timeout=20.0,
         )
 
     def _build_llm_prompt(self, qcount: int) -> str:
