@@ -13,6 +13,7 @@ import { StriveQuizService } from './strive-quiz.service';
 import { Activity } from '../../../../api/models';
 import {
   QuizCreateResponse,
+  QuizGenerationJobResponse,
   QuizQuestionsResponse,
   QuizSubmitResponse,
 } from './strive-quiz.models';
@@ -123,10 +124,12 @@ describe('DailyPractice', () => {
       routeCourseId?: string | null;
       quizMode?: 'daily' | 'source';
       activityId?: string | null;
+      jobId?: string | null;
       getActivity?: (courseId: number, activityId: number) => Promise<Activity>;
       loadActivities?: () => Promise<Activity[]>;
-      startQuizResponse?: QuizCreateResponse;
+      startQuizResponse?: QuizCreateResponse | QuizGenerationJobResponse;
       getQuizResponse?: QuizQuestionsResponse;
+      waitForGeneratedQuiz?: () => Promise<QuizQuestionsResponse>;
       submitQuizResponse?: QuizSubmitResponse;
       pendingSourceQuiz?: QuizQuestionsResponse | null;
     } = {},
@@ -151,10 +154,15 @@ describe('DailyPractice', () => {
     const routeCourseId = options.routeCourseId === undefined ? '1' : options.routeCourseId;
     const quizMode = options.quizMode ?? 'daily';
     const activityId = options.activityId === undefined ? null : options.activityId;
+    const jobId = options.jobId === undefined ? null : options.jobId;
 
     const mockQuizService = {
       startQuiz: vi.fn(() => Promise.resolve(options.startQuizResponse ?? fakeCreateResponse)),
       getQuiz: vi.fn(() => Promise.resolve(options.getQuizResponse ?? fakeQuestionsResponse)),
+      waitForGeneratedQuiz: vi.fn(
+        options.waitForGeneratedQuiz ??
+          (() => Promise.resolve(options.getQuizResponse ?? fakeQuestionsResponse)),
+      ),
       submitQuiz: vi.fn(() => Promise.resolve(options.submitQuizResponse ?? fakeSubmitResponse)),
       consumePendingSourceQuiz: vi.fn(() => options.pendingSourceQuiz ?? null),
     };
@@ -165,6 +173,7 @@ describe('DailyPractice', () => {
           get: (key: string) => {
             if (key === 'mode' && quizMode === 'source') return 'source';
             if (key === 'activityId') return activityId;
+            if (key === 'jobId') return jobId;
             return null;
           },
         },
@@ -220,6 +229,34 @@ describe('DailyPractice', () => {
     expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
   });
 
+  it('should load a source-based quiz from an async generation job', async () => {
+    const { fixture, mockQuizService } = setup({
+      quizMode: 'source',
+      jobId: '808',
+    });
+    await flush();
+    fixture.detectChanges();
+
+    expect(mockQuizService.waitForGeneratedQuiz).toHaveBeenCalledWith(808);
+    expect(mockQuizService.consumePendingSourceQuiz).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
+  });
+
+  it('should show an error when source-based job polling fails', async () => {
+    const { fixture, mockQuizService } = setup({
+      quizMode: 'source',
+      jobId: '808',
+      waitForGeneratedQuiz: () => Promise.reject(new Error('job failed')),
+    });
+    await flush();
+    fixture.detectChanges();
+
+    expect(mockQuizService.waitForGeneratedQuiz).toHaveBeenCalledWith(808);
+    expect(fixture.nativeElement.textContent).toContain(
+      'Unable to load source-based questions from the Strive quiz API.',
+    );
+  });
+
   it('should show an error when source-based quiz mode has no pending quiz', async () => {
     const { fixture, mockQuizService } = setup({
       quizMode: 'source',
@@ -259,6 +296,20 @@ describe('DailyPractice', () => {
       mode: 'daily',
       question_count: 5,
     });
+    expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
+  });
+
+  it('should wait for async daily quiz generation jobs', async () => {
+    const { fixture, mockQuizService } = setup({
+      startQuizResponse: {
+        job: { id: 909, status: 'pending', completed_at: null },
+      },
+    });
+    await flush();
+    fixture.detectChanges();
+
+    expect(mockQuizService.waitForGeneratedQuiz).toHaveBeenCalledWith(909);
+    expect(mockQuizService.getQuiz).not.toHaveBeenCalled();
     expect(fixture.nativeElement.textContent).toContain('Which keyword defines a function?');
   });
 
@@ -499,6 +550,19 @@ describe('DailyPractice', () => {
     expect(mockQuizService.getQuiz).toHaveBeenCalled();
     expect(fixture.nativeElement.textContent).toContain('Quiz unavailable');
     expect(fixture.nativeElement.textContent).toContain('The quiz service returned no questions.');
+  });
+
+  it('should show an error when quiz generation response has no id', async () => {
+    const { fixture } = setup({
+      startQuizResponse: {} as QuizGenerationJobResponse,
+    });
+    await flush();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Quiz unavailable');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Unable to load challenge questions from the Strive quiz API.',
+    );
   });
 
   it('should show an error when the quiz API rejects', async () => {

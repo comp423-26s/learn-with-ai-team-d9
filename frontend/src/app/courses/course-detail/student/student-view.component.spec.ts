@@ -42,6 +42,7 @@ describe('StudentView', () => {
         created_at: string;
       }>;
       uploadError?: boolean;
+      generationJobResponse?: { job: { id: number; status: 'pending'; completed_at: null } };
     } = {},
   ) {
     const mockPageTitle = {
@@ -66,28 +67,32 @@ describe('StudentView', () => {
           return Promise.reject(new Error('failed to upload source'));
         }
 
-        return Promise.resolve({
-          id: 101,
-          activity_id: 7,
-          student_pid: 730611076,
-          status: 'in_progress',
-          mode: 'daily',
-          module_name: null,
-          topic: 'Python Basics',
-          questions: [{ question_id: 1, text: 'What does def do?', choices: [] }],
-        });
+        return Promise.resolve(
+          options.generationJobResponse ?? {
+            id: 101,
+            activity_id: 7,
+            student_pid: 730611076,
+            status: 'in_progress',
+            mode: 'daily',
+            module_name: null,
+            topic: 'Python Basics',
+            questions: [{ question_id: 1, text: 'What does def do?', choices: [] }],
+          },
+        );
       }),
       createSourceQuiz: vi.fn(() => {
-        return Promise.resolve({
-          id: 202,
-          activity_id: 7,
-          student_pid: 730611076,
-          status: 'in_progress',
-          mode: 'daily',
-          module_name: null,
-          topic: 'Python Basics',
-          questions: [{ question_id: 1, text: 'What does def do?', choices: [] }],
-        });
+        return Promise.resolve(
+          options.generationJobResponse ?? {
+            id: 202,
+            activity_id: 7,
+            student_pid: 730611076,
+            status: 'in_progress',
+            mode: 'daily',
+            module_name: null,
+            topic: 'Python Basics',
+            questions: [{ question_id: 1, text: 'What does def do?', choices: [] }],
+          },
+        );
       }),
       setPendingSourceQuiz: vi.fn(),
     };
@@ -215,6 +220,41 @@ describe('StudentView', () => {
     });
     expect(fixture.nativeElement.textContent).toContain('lesson-notes.pdf');
     expect(fixture.nativeElement.textContent).toContain('Create Source-Based Quiz (5 Questions)');
+  });
+
+  it('should navigate to source quiz polling when generation returns a job', async () => {
+    const { fixture, mockStriveService, mockRouter } = configureAndRender({
+      generationJobResponse: { job: { id: 404, status: 'pending', completed_at: null } },
+    });
+    const component = fixture.componentInstance as StudentView;
+    const file = new File(['fake pdf'], 'async-notes.pdf', { type: 'application/pdf' });
+
+    (
+      component as unknown as {
+        onSourceFileSelected: (event: Event) => void;
+      }
+    ).onSourceFileSelected({
+      target: { files: [file] },
+    } as unknown as Event);
+
+    (
+      component as unknown as {
+        addSource: () => void;
+      }
+    ).addSource();
+
+    await (
+      component as unknown as {
+        createSourceBasedQuiz: () => Promise<void>;
+      }
+    ).createSourceBasedQuiz();
+    fixture.detectChanges();
+
+    expect(mockStriveService.setPendingSourceQuiz).not.toHaveBeenCalled();
+    expect(mockRouter.navigate).toHaveBeenCalledWith(['daily-practice'], {
+      relativeTo: expect.anything(),
+      queryParams: { mode: 'source', jobId: 404 },
+    });
   });
 
   it('should load persisted sources and create a quiz from saved context after refresh', async () => {

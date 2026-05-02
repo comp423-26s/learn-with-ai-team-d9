@@ -51,23 +51,11 @@ def test_strive_end_to_end_flow(client) -> None:
     body = {"mode": "daily", "module_name": "Module 2: Python Basics", "topic": "Loops", "question_count": 3}
     r = client.post(f"/api/activities/{activity['id']}/quizzes", json=body, headers=headers)
     assert r.status_code == 201
-    quiz = r.json()
-    assert quiz["status"] == "in_progress"
-    quiz_id = quiz["id"]
+    queued = r.json()
+    assert queued["job"]["status"] == "pending"
+    quiz_id = queued["job"]["id"]
 
-    # Get questions
+    # The request now queues generation; questions are unavailable until the worker completes it.
     r = client.get(f"/api/quizzes/{quiz_id}", headers=headers)
-    assert r.status_code == 200
-    data = r.json()
-    assert "questions" in data and isinstance(data["questions"], list)
-
-    # Submit answers (choose first option for each question)
-    answers = [
-        {"question_id": q["question_id"], "selected_choice_id": q["choices"][0]["id"]} for q in data["questions"]
-    ]
-    r = client.post(f"/api/quizzes/{quiz_id}/submit", json={"answers": answers}, headers=headers)
-    assert r.status_code == 200
-    result = r.json()
-    assert result["total_count"] == len(answers)
-    assert 0 <= result["correct_count"] <= result["total_count"]
-    assert len(result["feedback"]) == len(answers)
+    assert r.status_code == 409
+    assert "pending" in r.json()["detail"]

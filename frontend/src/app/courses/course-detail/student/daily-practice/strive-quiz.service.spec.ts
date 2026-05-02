@@ -7,7 +7,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { provideHttpClient } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { StriveQuizService } from './strive-quiz.service';
-import { QuizQuestionsResponse } from './strive-quiz.models';
+import { QuizGenerationJobResponse, QuizQuestionsResponse } from './strive-quiz.models';
 
 describe('StriveQuizService', () => {
   let service: StriveQuizService;
@@ -40,18 +40,10 @@ describe('StriveQuizService', () => {
     });
 
     request.flush({
-      id: 101,
-      activity_id: 7,
-      student_pid: 730611076,
-      status: 'in_progress',
-      started_at: '2026-04-20T12:00:00Z',
-      question_count: 5,
-      mode: 'daily',
-      module_name: null,
-      topic: 'Python Basics',
-    });
+      job: { id: 101, status: 'pending', completed_at: null },
+    } satisfies QuizGenerationJobResponse);
 
-    await expect(promise).resolves.toMatchObject({ id: 101, activity_id: 7 });
+    await expect(promise).resolves.toMatchObject({ job: { id: 101, status: 'pending' } });
   });
 
   it('should get quiz questions', async () => {
@@ -119,17 +111,10 @@ describe('StriveQuizService', () => {
     expect((uploadedFile as File).name).toBe('source.pdf');
 
     request.flush({
-      id: 202,
-      activity_id: 7,
-      student_pid: 730611076,
-      status: 'in_progress',
-      mode: 'daily',
-      module_name: null,
-      topic: 'Source Topic',
-      questions: [],
-    });
+      job: { id: 202, status: 'pending', completed_at: null },
+    } satisfies QuizGenerationJobResponse);
 
-    await expect(promise).resolves.toMatchObject({ id: 202, mode: 'daily' });
+    await expect(promise).resolves.toMatchObject({ job: { id: 202, status: 'pending' } });
   });
 
   it('should list persisted sources', async () => {
@@ -167,19 +152,45 @@ describe('StriveQuizService', () => {
     expect(request.request.body).toEqual({ question_count: 5 });
 
     request.flush({
-      id: 303,
+      job: { id: 303, status: 'pending', completed_at: null },
+    } satisfies QuizGenerationJobResponse);
+
+    await expect(promise).resolves.toMatchObject({ job: { id: 303, status: 'pending' } });
+  });
+
+  it('should wait for generated quiz questions after a pending response', async () => {
+    vi.useFakeTimers();
+    const generatedQuiz: QuizQuestionsResponse = {
+      id: 404,
       activity_id: 7,
       student_pid: 730611076,
       status: 'in_progress',
-      started_at: '2026-04-20T12:00:00Z',
-      question_count: 5,
       mode: 'daily',
       module_name: null,
-      topic: 'Saved Source',
+      topic: 'Generated',
       questions: [],
-    });
+    };
+    vi.spyOn(service, 'getQuiz')
+      .mockRejectedValueOnce(new Error('pending'))
+      .mockResolvedValue(generatedQuiz);
 
-    await expect(promise).resolves.toMatchObject({ id: 303, activity_id: 7 });
+    const promise = service.waitForGeneratedQuiz(404);
+    await vi.runOnlyPendingTimersAsync();
+
+    await expect(promise).resolves.toBe(generatedQuiz);
+    vi.useRealTimers();
+  });
+
+  it('should time out when generated quiz questions never become available', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(service, 'getQuiz').mockRejectedValue(new Error('pending'));
+
+    const promise = service.waitForGeneratedQuiz(405);
+    const rejection = expect(promise).rejects.toThrow('Timed out waiting for generated quiz.');
+    await vi.runAllTimersAsync();
+
+    await rejection;
+    vi.useRealTimers();
   });
 
   it('should consume and clear the pending source quiz', () => {

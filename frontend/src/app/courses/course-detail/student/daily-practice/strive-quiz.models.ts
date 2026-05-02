@@ -77,3 +77,15 @@ export type QuizSubmitResponse = {
   feedback: QuizFeedbackDTO[];
   finished_at: string;
 };
+
+/** Shared async job status returned by queued quiz generation endpoints. */
+export type AsyncJobInfo = {
+  id: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  completed_at?: string | null;
+};
+
+/** Response returned when Strive quiz generation has been queued. */
+export type QuizGenerationJobResponse = {
+  job: AsyncJobInfo;
+};

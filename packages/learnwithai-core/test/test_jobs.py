@@ -6,6 +6,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from learnwithai.activities.strive.job import StriveQuizGenerationJobHandler
 from learnwithai.jobs import (
     EchoJob,
     ForbiddenJobQueue,
@@ -13,6 +14,7 @@ from learnwithai.jobs import (
     JobPayload,
     JokeGenerationJob,
     RosterUploadJob,
+    StriveQuizGenerationJob,
     get_job_handler_map,
     job_adapter,
     job_payload_adapter,
@@ -39,6 +41,7 @@ def test_jobs_package_exports_expected_symbols() -> None:
         "JokeGenerationJob",
         "NoOpJobNotifier",
         "RosterUploadJob",
+        "StriveQuizGenerationJob",
         "RosterUploadOutput",
         "JobPayload",
         "get_job_handler_map",
@@ -99,6 +102,14 @@ def test_job_handler_map_points_echo_job_to_echo_handler() -> None:
 
     # Assert
     assert isinstance(handler, EchoJobHandler)
+
+
+def test_job_handler_map_points_strive_job_to_strive_handler() -> None:
+    handler_class = get_job_handler_map()[StriveQuizGenerationJob]
+
+    handler = handler_class()
+
+    assert isinstance(handler, StriveQuizGenerationJobHandler)
 
 
 def test_echo_job_handler_prints_payload_with_health_status() -> None:

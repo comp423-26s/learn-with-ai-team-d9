@@ -138,7 +138,7 @@ export class StudentView {
         return;
       }
 
-      const quiz =
+      const generation =
         source.sourceId !== undefined
           ? await this.striveQuizService.createSourceQuiz(source.sourceId, 5)
           : await this.striveQuizService.uploadPdfAndGenerateQuiz(
@@ -146,7 +146,18 @@ export class StudentView {
               this.requireSelectedSourceFile(source),
               5,
             );
-      this.striveQuizService.setPendingSourceQuiz(quiz);
+      if ('job' in generation) {
+        this.sourceStatusMessage.set(
+          `Generating a 5-question source-based quiz from "${source.name}".`,
+        );
+        await this.router.navigate(['daily-practice'], {
+          relativeTo: this.route,
+          queryParams: { mode: 'source', jobId: generation.job.id },
+        });
+        return;
+      }
+
+      this.striveQuizService.setPendingSourceQuiz(generation);
       this.sourceStatusMessage.set(`Created a 5-question source-based quiz from "${source.name}".`);
       await this.router.navigate(['daily-practice'], {
         relativeTo: this.route,

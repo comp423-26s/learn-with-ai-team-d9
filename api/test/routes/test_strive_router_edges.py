@@ -20,6 +20,7 @@ from api.routes.strive_router import (
 class DummyActivity:
     def __init__(self, id: int) -> None:
         self.id = id
+        self.course_id = 1
 
 
 class DummyUser:
@@ -46,6 +47,10 @@ def _make_pdf_upload_file(content: bytes = b"%PDF-1.4 test pdf") -> UploadFile:
         filename="quiz.pdf",
         headers=Headers({"content-type": "application/pdf"}),
     )
+
+
+def _make_job(job_id: int = 101) -> dict[str, Any]:
+    return {"id": job_id, "status": "pending", "completed_at": None}
 
 
 def _make_quiz_payload() -> dict[str, Any]:
@@ -77,20 +82,39 @@ class FailingService:
     def start_quiz(self, *a: Any, **k: Any) -> None:
         raise KeyError("no activity")
 
+    def start_quiz_job(self, *a: Any, **k: Any) -> None:
+        raise KeyError("no activity")
+
     def get_quiz(self, *a: Any, **k: Any) -> None:
         raise KeyError("no quiz")
 
     def submit_quiz(self, *a: Any, **k: Any) -> None:
         raise KeyError("no quiz")
 
-    def generate_quiz_from_pdf(self, *a: Any, **k: Any) -> None:
+    def generate_quiz_from_pdf_job(self, *a: Any, **k: Any) -> None:
         raise KeyError("no activity")
 
     def list_uploaded_sources(self, *a: Any, **k: Any) -> None:
         raise RuntimeError("no sources")
 
-    def generate_quiz_from_source(self, *a: Any, **k: Any) -> None:
+    def generate_quiz_from_source_job(self, *a: Any, **k: Any) -> None:
         raise KeyError("no source")
+
+
+class PendingService:
+    def get_quiz(self, *a: Any, **k: Any) -> None:
+        raise ValueError("Quiz generation job is pending.")
+
+    def submit_quiz(self, *a: Any, **k: Any) -> None:
+        raise ValueError("Quiz generation job is pending.")
+
+
+class ForbiddenService:
+    def get_quiz(self, *a: Any, **k: Any) -> None:
+        raise PermissionError("not allowed")
+
+    def submit_quiz(self, *a: Any, **k: Any) -> None:
+        raise PermissionError("not allowed")
 
 
 def test_start_quiz_unwired_raises_501() -> None:
@@ -124,6 +148,38 @@ def test_get_and_submit_keyerror_converted_to_404() -> None:
         assert e.status_code == 404
 
 
+def test_get_and_submit_valueerror_converted_to_409() -> None:
+    subject = DummyUser(123)
+    try:
+        get_quiz(quiz_submission_id=999, subject=subject, strive_svc=PendingService())  # type: ignore[arg-type]
+        raise AssertionError("expected HTTPException")
+    except HTTPException as e:
+        assert e.status_code == 409
+
+    body = QuizSubmitRequest.model_validate({"answers": []})
+    try:
+        submit_quiz(quiz_submission_id=999, body=body, subject=subject, strive_svc=PendingService())  # type: ignore[arg-type]
+        raise AssertionError("expected HTTPException")
+    except HTTPException as e:
+        assert e.status_code == 409
+
+
+def test_get_and_submit_permission_error_converted_to_403() -> None:
+    subject = DummyUser(123)
+    try:
+        get_quiz(quiz_submission_id=999, subject=subject, strive_svc=ForbiddenService())  # type: ignore[arg-type]
+        raise AssertionError("expected HTTPException")
+    except HTTPException as e:
+        assert e.status_code == 403
+
+    body = QuizSubmitRequest.model_validate({"answers": []})
+    try:
+        submit_quiz(quiz_submission_id=999, body=body, subject=subject, strive_svc=ForbiddenService())  # type: ignore[arg-type]
+        raise AssertionError("expected HTTPException")
+    except HTTPException as e:
+        assert e.status_code == 403
+
+
 def test_get_and_submit_unwired_raise_501() -> None:
     subject = DummyUser(123)
     try:
@@ -151,7 +207,7 @@ def test_upload_pdf_and_generate_quiz_returns_response() -> None:
     activity: Any = _stub_activity(1)
     subject: Any = _stub_user(123)
     strive_svc: Any = MagicMock()
-    strive_svc.generate_quiz_from_pdf.return_value = _make_quiz_payload()
+    strive_svc.generate_quiz_from_pdf_job.return_value = _make_job(101)
     file = _make_pdf_upload_file()
 
     result = upload_pdf_and_generate_quiz(
@@ -162,11 +218,9 @@ def test_upload_pdf_and_generate_quiz_returns_response() -> None:
         question_count=7,
     )
 
-    assert result.id == 101
-    assert result.activity_id == 1
-    assert result.student_pid == 123
-    assert result.questions[0].question_id == 1
-    strive_svc.generate_quiz_from_pdf.assert_called_once_with(
+    assert result.job.id == 101
+    assert result.job.status == "pending"
+    strive_svc.generate_quiz_from_pdf_job.assert_called_once_with(
         subject=subject,
         activity=activity,
         pdf_bytes=b"%PDF-1.4 test pdf",
@@ -257,11 +311,11 @@ def test_upload_pdf_and_generate_quiz_translates_service_errors() -> None:
     subject: Any = _stub_user(123)
 
     class ValueErrorService:
-        def generate_quiz_from_pdf(self, *a: Any, **k: Any) -> None:
+        def generate_quiz_from_pdf_job(self, *a: Any, **k: Any) -> None:
             raise ValueError("bad input")
 
     class GenericErrorService:
-        def generate_quiz_from_pdf(self, *a: Any, **k: Any) -> None:
+        def generate_quiz_from_pdf_job(self, *a: Any, **k: Any) -> None:
             raise RuntimeError("boom")
 
     cases: list[tuple[Any, int, str]] = [
@@ -311,25 +365,25 @@ def test_create_source_quiz_returns_response() -> None:
     subject: Any = _stub_user(123)
 
     class Service:
-        def generate_quiz_from_source(self, *a: Any, **k: Any) -> dict[str, Any]:
-            return _make_quiz_payload()
+        def generate_quiz_from_source_job(self, *a: Any, **k: Any) -> Any:
+            return _make_job(101)
 
     body: Any = type("B", (), {"question_count": 5})()
     result = create_source_quiz(source_id=11, body=body, subject=subject, strive_svc=cast(Any, Service()))
 
-    assert result.id == 101
-    assert result.activity_id == 1
+    assert result.job.id == 101
+    assert result.job.status == "pending"
 
 
 def test_create_source_quiz_translates_errors() -> None:
     subject: Any = _stub_user(123)
 
     class PermissionService:
-        def generate_quiz_from_source(self, *a: Any, **k: Any) -> None:
+        def generate_quiz_from_source_job(self, *a: Any, **k: Any) -> None:
             raise PermissionError("nope")
 
     class GenericService:
-        def generate_quiz_from_source(self, *a: Any, **k: Any) -> None:
+        def generate_quiz_from_source_job(self, *a: Any, **k: Any) -> None:
             raise RuntimeError("boom")
 
     body: Any = type("B", (), {"question_count": 5})()
@@ -370,7 +424,7 @@ def test_create_source_quiz_key_error_raises_404() -> None:
     subject: Any = _stub_user(1)
 
     class NotFoundService:
-        def generate_quiz_from_source(self, *a: Any, **k: Any) -> None:
+        def generate_quiz_from_source_job(self, *a: Any, **k: Any) -> None:
             raise KeyError("source not found")
 
     body: Any = type("B", (), {"question_count": 5})()
@@ -385,7 +439,7 @@ def test_create_source_quiz_value_error_raises_400() -> None:
     subject: Any = _stub_user(1)
 
     class BadValueService:
-        def generate_quiz_from_source(self, *a: Any, **k: Any) -> None:
+        def generate_quiz_from_source_job(self, *a: Any, **k: Any) -> None:
             raise ValueError("bad input")
 
     body: Any = type("B", (), {"question_count": 5})()

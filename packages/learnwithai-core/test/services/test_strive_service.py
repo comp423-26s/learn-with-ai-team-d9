@@ -10,6 +10,7 @@ import learnwithai.services.strive_service as strive_service_module
 import pytest
 from learnwithai.services.strive_service import StriveService
 from learnwithai.tables.activity import Activity
+from learnwithai.tables.async_job import AsyncJob, AsyncJobStatus
 from learnwithai.tables.user import User
 
 
@@ -702,3 +703,196 @@ def test_generate_quiz_from_source_llm_fallback() -> None:
     assert len(result["questions"]) == 2
     for q in result["questions"]:
         assert "saved source" in q["text"]
+
+
+def test_start_quiz_job_creates_async_job() -> None:
+    async_job_repo = MagicMock()
+    queued_job = AsyncJob(
+        id=404,
+        course_id=1,
+        created_by_pid=77,
+        kind="strive_quiz_generation",
+        input_data={},
+    )
+    async_job_repo.create.side_effect = lambda job: queued_job.model_copy(
+        update={
+            "course_id": job.course_id,
+            "created_by_pid": job.created_by_pid,
+            "input_data": job.input_data,
+        }
+    )
+    job_queue = MagicMock()
+    svc = StriveService(async_job_repo=async_job_repo, job_queue=job_queue)
+    subject = cast(User, type("U", (), {"pid": 77})())
+    activity = cast(Activity, type("A", (), {"id": 12, "course_id": 3})())
+    options = type("O", (), {"question_count": 4, "mode": "daily", "module_name": "M1", "topic": "Loops"})()
+
+    job = svc.start_quiz_job(subject=subject, activity=activity, options=options)
+
+    assert job.id == 404
+    created_job = async_job_repo.create.call_args.args[0]
+    assert created_job.course_id == 3
+    assert created_job.created_by_pid == 77
+    assert created_job.input_data == {
+        "activity_id": 12,
+        "student_pid": 77,
+        "question_count": 4,
+        "mode": "daily",
+        "module_name": "M1",
+        "topic": "Loops",
+        "source_id": None,
+    }
+    job_queue.enqueue.assert_called_once()
+
+
+def test_generate_quiz_from_pdf_job_stores_source_and_queues_job() -> None:
+    source_repo = MagicMock()
+    source_repo.create_source.return_value = type("Source", (), {"id": 9})()
+    async_job_repo = MagicMock()
+    async_job_repo.create.side_effect = lambda job: job.model_copy(update={"id": 505})
+    job_queue = MagicMock()
+    svc = StriveService(source_repo=source_repo, async_job_repo=async_job_repo, job_queue=job_queue)
+    subject = cast(User, type("U", (), {"pid": 88})())
+    activity = cast(Activity, type("A", (), {"id": 33, "course_id": 4})())
+
+    job = svc.generate_quiz_from_pdf_job(
+        subject=subject,
+        activity=activity,
+        pdf_bytes=b"%PDF-1.4",
+        question_count=2,
+        source_filename="notes.pdf",
+    )
+
+    assert job.id == 505
+    created_source = source_repo.create_source.call_args.args[0]
+    assert created_source.student_pid == 88
+    assert created_source.activity_id == 33
+    assert created_source.filename == "notes.pdf"
+    assert async_job_repo.create.call_args.args[0].input_data["source_id"] == 9
+    job_queue.enqueue.assert_called_once()
+
+
+def test_generate_quiz_from_source_job_validation_and_success() -> None:
+    subject = cast(User, type("U", (), {"pid": 10})())
+
+    with pytest.raises(RuntimeError):
+        StriveService().generate_quiz_from_source_job(subject=subject, source_id=1)
+
+    source_repo = MagicMock()
+    source_repo.get_by_id.return_value = None
+    svc = StriveService(source_repo=source_repo, async_job_repo=MagicMock(), job_queue=MagicMock())
+    with pytest.raises(KeyError):
+        svc.generate_quiz_from_source_job(subject=subject, source_id=1)
+
+    source_repo.get_by_id.return_value = type("Source", (), {"id": 1, "student_pid": 999, "activity_id": 6})()
+    with pytest.raises(PermissionError):
+        svc.generate_quiz_from_source_job(subject=subject, source_id=1)
+
+    async_job_repo = MagicMock()
+    async_job_repo.create.side_effect = lambda job: job.model_copy(update={"id": 606})
+    job_queue = MagicMock()
+    source_repo.get_by_id.return_value = type("Source", (), {"id": 1, "student_pid": 10, "activity_id": 6})()
+    svc = StriveService(source_repo=source_repo, async_job_repo=async_job_repo, job_queue=job_queue)
+
+    job = svc.generate_quiz_from_source_job(subject=subject, source_id=1, question_count=3)
+
+    assert job.id == 606
+    assert async_job_repo.create.call_args.args[0].input_data["source_id"] == 1
+    job_queue.enqueue.assert_called_once()
+
+
+def test_async_quiz_access_and_submission_paths() -> None:
+    questions = _mock_questions(2)
+    quiz_payload = {
+        "id": 707,
+        "activity_id": 5,
+        "student_pid": 12,
+        "status": "in_progress",
+        "started_at": datetime.now(timezone.utc),
+        "question_count": 2,
+        "mode": "daily",
+        "module_name": None,
+        "topic": None,
+        "questions": questions,
+    }
+    async_job = AsyncJob(
+        id=707,
+        course_id=1,
+        created_by_pid=12,
+        kind="strive_quiz_generation",
+        status=AsyncJobStatus.COMPLETED,
+        input_data={},
+        output_data={"quiz": quiz_payload},
+    )
+    async_job_repo = MagicMock()
+    async_job_repo.get_by_id.return_value = async_job
+    svc = StriveService(async_job_repo=async_job_repo, job_queue=MagicMock())
+    subject = cast(User, type("U", (), {"pid": 12})())
+
+    public_quiz = svc.get_async_quiz(subject=subject, job_id=707)
+
+    assert public_quiz["questions"][0]["text"] == "Q1"
+    assert "correct_choice_id" not in public_quiz["questions"][0]
+
+    result = svc.submit_async_quiz(
+        subject=subject,
+        job_id=707,
+        answers=[
+            {"question_id": 1, "selected_choice_id": 1},
+            {"question_id": 2, "selected_choice_id": 2},
+        ],
+    )
+    assert result["id"] == 707
+    assert result["total_count"] == 2
+
+    async_job.status = AsyncJobStatus.PENDING
+    with pytest.raises(ValueError, match="pending"):
+        svc.get_async_quiz(subject=subject, job_id=707)
+
+    async_job.status = AsyncJobStatus.COMPLETED
+    async_job.output_data = None
+    with pytest.raises(ValueError, match="no quiz output"):
+        svc.get_async_quiz(subject=subject, job_id=707)
+    with pytest.raises(ValueError, match="no quiz output"):
+        svc.submit_async_quiz(subject=subject, job_id=707, answers=[])
+
+
+def test_async_quiz_job_ownership_errors() -> None:
+    subject = cast(User, type("U", (), {"pid": 12})())
+    with pytest.raises(KeyError):
+        StriveService().get_async_quiz(subject=subject, job_id=1)
+
+    async_job_repo = MagicMock()
+    async_job_repo.get_by_id.return_value = None
+    svc = StriveService(async_job_repo=async_job_repo, job_queue=MagicMock())
+    with pytest.raises(KeyError):
+        svc.get_async_quiz(subject=subject, job_id=1)
+
+    async_job_repo.get_by_id.return_value = AsyncJob(
+        id=1,
+        course_id=1,
+        created_by_pid=12,
+        kind="other",
+        input_data={},
+    )
+    with pytest.raises(KeyError):
+        svc.get_async_quiz(subject=subject, job_id=1)
+
+    async_job_repo.get_by_id.return_value = AsyncJob(
+        id=1,
+        course_id=1,
+        created_by_pid=99,
+        kind="strive_quiz_generation",
+        input_data={},
+    )
+    with pytest.raises(PermissionError):
+        svc.get_async_quiz(subject=subject, job_id=1)
+
+
+def test_start_quiz_job_requires_async_dependencies() -> None:
+    svc = StriveService()
+    subject = cast(User, type("U", (), {"pid": 1})())
+    activity = cast(Activity, type("A", (), {"id": 1})())
+
+    with pytest.raises(RuntimeError, match="Async job dependencies"):
+        svc.start_quiz_job(subject=subject, activity=activity, options=None)

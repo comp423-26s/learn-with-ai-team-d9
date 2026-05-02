@@ -8,6 +8,7 @@ from typing import Annotated, Any, TypeAlias, Union
 from pydantic import Discriminator, TypeAdapter
 
 from ..activities.iyow.models import IyowFeedbackJob
+from ..activities.strive.models import StriveQuizGenerationJob
 from ..interfaces import Job, JobHandler
 from ..tools.jokes.models import JokeGenerationJob
 from .base_job_handler import BaseJobHandler
@@ -17,7 +18,7 @@ from .noop_job_notifier import NoOpJobNotifier
 from .roster_upload import RosterUploadJob, RosterUploadJobHandler, RosterUploadOutput
 
 JobPayload: TypeAlias = Annotated[
-    Union[EchoJob, IyowFeedbackJob, JokeGenerationJob, RosterUploadJob], Discriminator("type")
+    Union[EchoJob, IyowFeedbackJob, JokeGenerationJob, RosterUploadJob, StriveQuizGenerationJob], Discriminator("type")
 ]
 
 job_payload_adapter: TypeAdapter[JobPayload] = TypeAdapter(JobPayload)
@@ -43,6 +44,7 @@ def get_job_handler_map() -> dict[type[Job], type[JobHandler[Any]]]:
     import would create a cycle, so the handler is resolved lazily.
     """
     from ..activities.iyow.job import IyowFeedbackJobHandler
+    from ..activities.strive.job import StriveQuizGenerationJobHandler
     from ..tools.jokes.job import JokeGenerationJobHandler
 
     return {
@@ -50,6 +52,7 @@ def get_job_handler_map() -> dict[type[Job], type[JobHandler[Any]]]:
         IyowFeedbackJob: IyowFeedbackJobHandler,
         JokeGenerationJob: JokeGenerationJobHandler,
         RosterUploadJob: RosterUploadJobHandler,
+        StriveQuizGenerationJob: StriveQuizGenerationJobHandler,
     }
 
 
@@ -62,6 +65,7 @@ __all__ = [
     "JokeGenerationJob",
     "NoOpJobNotifier",
     "RosterUploadJob",
+    "StriveQuizGenerationJob",
     "RosterUploadOutput",
     "JobPayload",
     "get_job_handler_map",

@@ -145,7 +145,12 @@ export class StriveSubmit {
     this.generatingPdfQuiz.set(true);
     this.pdfStatusMessage.set('');
     try {
-      const quiz = await this.striveQuizService.uploadPdfAndGenerateQuiz(this.activityId, file, 5);
+      const generation = await this.striveQuizService.uploadPdfAndGenerateQuiz(
+        this.activityId,
+        file,
+        5,
+      );
+      const quiz = await this.loadGeneratedQuiz(generation);
       if (quiz.questions.length === 0) {
         this.pdfStatusMessage.set('The quiz service returned no questions from your PDF.');
         return;
@@ -224,15 +229,29 @@ export class StriveSubmit {
     }
   }
 
+  private async loadGeneratedQuiz(generation: {
+    job?: { id: number };
+    id?: number;
+  }): Promise<QuizQuestionsResponse> {
+    const jobId = generation.job?.id ?? generation.id;
+    if (jobId === undefined) {
+      throw new Error('Quiz generation response did not include a job id.');
+    }
+
+    return generation.job === undefined
+      ? this.striveQuizService.getQuiz(jobId)
+      : this.striveQuizService.waitForGeneratedQuiz(jobId);
+  }
+
   private async startNewQuiz(): Promise<void> {
     this.loading.set(true);
     this.message.set('');
     try {
-      const created = await this.striveQuizService.startQuiz(this.activityId, {
+      const generation = await this.striveQuizService.startQuiz(this.activityId, {
         mode: 'daily',
         question_count: 5,
       });
-      const quiz = await this.striveQuizService.getQuiz(created.id);
+      const quiz = await this.loadGeneratedQuiz(generation);
       if (quiz.questions.length === 0) {
         this.message.set('The quiz service returned no questions.');
         return;
