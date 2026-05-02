@@ -7,6 +7,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field as _PydanticField
 
+from .async_job import AsyncJobInfo
+
 # Some pydantic Field callsites use keyword combinations that the type stubs
 # flag as not matching overloads. Treat `Field` as `Any` here so the type
 # checker does not raise spurious overload errors for legitimate runtime use.
@@ -73,6 +75,14 @@ class QuizCreateResponse(BaseModel):
     topic: Optional[str] = Field(
         default=None, description="Topic focus for this quiz.", json_schema_extra={"example": "Functions"}
     )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class QuizGenerationJobResponse(BaseModel):
+    """Response returned after a Strive quiz generation job is queued."""
+
+    job: AsyncJobInfo = Field(..., description="Queued quiz generation job.")
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -1269,6 +1269,312 @@
         }
       }
     },
+    "/api/activities/{activity_id}/quizzes": {
+      "post": {
+        "tags": [
+          "Strive"
+        ],
+        "summary": "Queue quiz generation for an activity",
+        "operationId": "start_quiz",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "activity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Activity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuizCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuizGenerationJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/quizzes/{quiz_submission_id}": {
+      "get": {
+        "tags": [
+          "Strive"
+        ],
+        "summary": "Get questions for a quiz submission",
+        "operationId": "get_quiz",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "quiz_submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Quiz Submission Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuizQuestionsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/quizzes/{quiz_submission_id}/submit": {
+      "post": {
+        "tags": [
+          "Strive"
+        ],
+        "summary": "Submit answers for grading",
+        "operationId": "submit_quiz",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "quiz_submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Quiz Submission Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuizSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuizSubmitResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sources": {
+      "get": {
+        "tags": [
+          "Strive"
+        ],
+        "summary": "List uploaded source files for the current student",
+        "operationId": "list_sources",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SourceSummaryResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Sources"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/activities/{activity_id}/quizzes/upload-pdf": {
+      "post": {
+        "tags": [
+          "Strive"
+        ],
+        "summary": "Upload PDF and queue quiz generation",
+        "description": "Accepts a PDF upload and queues quiz generation from its text.\n\n- `file`: uploaded PDF file (multipart/form-data)\n- `question_count`: optional form field (defaults to 5)",
+        "operationId": "upload_pdf_and_generate_quiz",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "activity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Activity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_pdf_and_generate_quiz"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuizGenerationJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sources/{source_id}/quizzes": {
+      "post": {
+        "tags": [
+          "Strive"
+        ],
+        "summary": "Queue quiz generation from a previously stored source",
+        "operationId": "create_source_quiz",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceQuizCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuizGenerationJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/courses/{course_id}/roster-uploads": {
       "post": {
         "tags": [
@@ -1654,6 +1960,28 @@
         }
       }
     },
+    "/api/team/test": {
+      "get": {
+        "tags": [
+          "Team"
+        ],
+        "summary": "Team test endpoint",
+        "description": "Return a simple payload to verify the router is registered.",
+        "operationId": "team_test",
+        "responses": {
+          "200": {
+            "description": "A simple test payload from the team's router.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamTestResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/dev/users": {
       "get": {
         "tags": [
@@ -1887,6 +2215,25 @@
         "title": "AsyncJobStatus",
         "description": "Lifecycle state of an asynchronous job."
       },
+      "Body_upload_pdf_and_generate_quiz": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "question_count": {
+            "type": "integer",
+            "title": "Question Count",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_pdf_and_generate_quiz"
+      },
       "Body_upload_roster_csv": {
         "properties": {
           "file": {
@@ -1900,6 +2247,29 @@
           "file"
         ],
         "title": "Body_upload_roster_csv"
+      },
+      "ChoiceDTO": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id",
+            "description": "Choice id local to the question.",
+            "example": 2
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "Display text for the choice.",
+            "example": "def"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "ChoiceDTO",
+        "description": "Single multiple-choice option."
       },
       "CourseMembership": {
         "properties": {
@@ -2331,6 +2701,348 @@
         "title": "PaginatedRosterResponse",
         "description": "Paginated wrapper around roster member entries."
       },
+      "QuizAnswerDTO": {
+        "properties": {
+          "question_id": {
+            "type": "integer",
+            "title": "Question Id",
+            "description": "Local question id being answered.",
+            "example": 1
+          },
+          "selected_choice_id": {
+            "type": "integer",
+            "title": "Selected Choice Id",
+            "description": "Selected choice id.",
+            "example": 2
+          }
+        },
+        "type": "object",
+        "required": [
+          "question_id",
+          "selected_choice_id"
+        ],
+        "title": "QuizAnswerDTO",
+        "description": "Single answer payload from the frontend when submitting a quiz."
+      },
+      "QuizCreateRequest": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "module"
+            ],
+            "title": "Mode",
+            "description": "Quiz generation mode. 'daily' for a daily practice quiz, 'module' for a module-focused quiz.",
+            "examples": [
+              "daily",
+              "module"
+            ]
+          },
+          "module_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module Name",
+            "description": "Optional module name when `mode` is 'module'.",
+            "examples": [
+              "Module 2: Python Basics"
+            ]
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic",
+            "description": "Optional topic to focus the questions on.",
+            "examples": [
+              "Loops",
+              "Lists"
+            ]
+          },
+          "question_count": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Question Count",
+            "description": "Number of multiple-choice questions to generate (1\u201310).",
+            "default": 5,
+            "example": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "title": "QuizCreateRequest",
+        "description": "Request body to start a Strive quiz (minimal)."
+      },
+      "QuizFeedbackDTO": {
+        "properties": {
+          "question_id": {
+            "type": "integer",
+            "title": "Question Id",
+            "description": "Question id.",
+            "example": 1
+          },
+          "correct": {
+            "type": "boolean",
+            "title": "Correct",
+            "description": "Whether the submitted answer was correct.",
+            "example": true
+          },
+          "correct_choice_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Choice Id",
+            "description": "The correct choice id.",
+            "example": 2
+          },
+          "explanation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation",
+            "description": "Short explanation for the correct answer.",
+            "example": "The `def` keyword declares a function."
+          }
+        },
+        "type": "object",
+        "required": [
+          "question_id",
+          "correct"
+        ],
+        "title": "QuizFeedbackDTO",
+        "description": "Per-question feedback returned after grading."
+      },
+      "QuizGenerationJobResponse": {
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/AsyncJobInfo",
+            "description": "Queued quiz generation job."
+          }
+        },
+        "type": "object",
+        "required": [
+          "job"
+        ],
+        "title": "QuizGenerationJobResponse",
+        "description": "Response returned after a Strive quiz generation job is queued."
+      },
+      "QuizQuestionDTO": {
+        "properties": {
+          "question_id": {
+            "type": "integer",
+            "title": "Question Id",
+            "description": "Local question id within the submission.",
+            "example": 1
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "Question text shown to the student.",
+            "example": "Which keyword defines a function in Python?"
+          },
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/ChoiceDTO"
+            },
+            "type": "array",
+            "title": "Choices",
+            "description": "Ordered list of choices."
+          }
+        },
+        "type": "object",
+        "required": [
+          "question_id",
+          "text",
+          "choices"
+        ],
+        "title": "QuizQuestionDTO",
+        "description": "Question returned to the frontend (no correct answer)."
+      },
+      "QuizQuestionsResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id",
+            "description": "Quiz submission id.",
+            "example": 101
+          },
+          "activity_id": {
+            "type": "integer",
+            "title": "Activity Id",
+            "description": "Associated activity id.",
+            "example": 42
+          },
+          "student_pid": {
+            "type": "integer",
+            "title": "Student Pid",
+            "description": "Owner student's pid.",
+            "example": 730611076
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Submission status.",
+            "example": "in_progress"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "module"
+            ],
+            "title": "Mode",
+            "description": "Generation mode.",
+            "example": "daily"
+          },
+          "module_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module Name",
+            "description": "Module name when mode='module'.",
+            "example": "Module 2: Python Basics"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic",
+            "description": "Topic focus.",
+            "example": "Functions"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/QuizQuestionDTO"
+            },
+            "type": "array",
+            "title": "Questions",
+            "description": "List of questions for the submission."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "activity_id",
+          "student_pid",
+          "status",
+          "mode",
+          "questions"
+        ],
+        "title": "QuizQuestionsResponse",
+        "description": "Response for retrieving a quiz's questions (no answers included)."
+      },
+      "QuizSubmitRequest": {
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/QuizAnswerDTO"
+            },
+            "type": "array",
+            "title": "Answers",
+            "description": "List of answers for the submission.",
+            "example": [
+              {
+                "question_id": 1,
+                "selected_choice_id": 2
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "answers"
+        ],
+        "title": "QuizSubmitRequest",
+        "description": "Request body for submitting quiz answers."
+      },
+      "QuizSubmitResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id",
+            "description": "Quiz submission id.",
+            "example": 101
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "description": "Score as percentage (0-100).",
+            "example": 80.0
+          },
+          "correct_count": {
+            "type": "integer",
+            "title": "Correct Count",
+            "description": "Number of correct answers.",
+            "example": 4
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count",
+            "description": "Total number of questions.",
+            "example": 5
+          },
+          "feedback": {
+            "items": {
+              "$ref": "#/components/schemas/QuizFeedbackDTO"
+            },
+            "type": "array",
+            "title": "Feedback",
+            "description": "Per-question feedback."
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Finished At",
+            "description": "UTC timestamp when grading completed.",
+            "example": "2026-04-15T12:05:00Z"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "score",
+          "correct_count",
+          "total_count",
+          "feedback",
+          "finished_at"
+        ],
+        "title": "QuizSubmitResponse",
+        "description": "Response after grading a quiz submission."
+      },
       "RosterMemberResponse": {
         "properties": {
           "user_pid": {
@@ -2455,6 +3167,73 @@
         "title": "RosterUploadStatusResponse",
         "description": "Detailed status of a roster upload job."
       },
+      "SourceQuizCreateRequest": {
+        "properties": {
+          "question_count": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Question Count",
+            "description": "Number of multiple-choice questions to generate (1\u201310).",
+            "default": 5,
+            "example": 5
+          }
+        },
+        "type": "object",
+        "title": "SourceQuizCreateRequest",
+        "description": "Request body for generating a quiz from a stored source."
+      },
+      "SourceSummaryResponse": {
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "title": "Source Id",
+            "description": "Source row id.",
+            "example": 501
+          },
+          "activity_id": {
+            "type": "integer",
+            "title": "Activity Id",
+            "description": "Activity id the source was uploaded for.",
+            "example": 42
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename",
+            "description": "Original uploaded filename.",
+            "example": "lesson-notes.pdf"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type",
+            "description": "MIME type for the stored file.",
+            "example": "application/pdf"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "UTC timestamp when the source was stored.",
+            "example": "2026-04-20T12:00:00Z"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "activity_id",
+          "content_type",
+          "created_at"
+        ],
+        "title": "SourceSummaryResponse",
+        "description": "Summary for a persisted Strive source file."
+      },
       "StudentSubmissionRow": {
         "properties": {
           "student_pid": {
@@ -2529,6 +3308,24 @@
         ],
         "title": "SubmitIyowRequest",
         "description": "Request body for submitting a student response to an IYOW activity."
+      },
+      "TeamTestResponse": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "team": {
+            "type": "string",
+            "title": "Team"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "team"
+        ],
+        "title": "TeamTestResponse"
       },
       "Term": {
         "type": "string",

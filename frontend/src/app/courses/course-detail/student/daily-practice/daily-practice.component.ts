@@ -124,11 +124,11 @@ export class DailyPractice {
           : await this.activityService.get(courseId, activityId);
 
       if (quizActivity !== null) {
-        const createdQuiz = await this.striveQuizService.startQuiz(quizActivity.id, {
+        const generation = await this.striveQuizService.startQuiz(quizActivity.id, {
           mode: 'daily',
           question_count: 5,
         });
-        const quiz = await this.striveQuizService.getQuiz(createdQuiz.id);
+        const quiz = await this.loadGeneratedQuiz(generation);
 
         this.applyLoadedQuiz(quiz);
       } else {
@@ -142,15 +142,43 @@ export class DailyPractice {
     }
   }
 
-  private loadSourceChallenge(): void {
-    const sourceQuiz = this.striveQuizService.consumePendingSourceQuiz();
-    if (sourceQuiz === null) {
-      this.setLoadError('No source-based quiz is ready. Add sources from the dashboard first.');
-      return;
+  private async loadSourceChallenge(): Promise<void> {
+    const jobIdParam = this.route.snapshot.queryParamMap.get('jobId');
+    const jobId = jobIdParam === null ? null : Number(jobIdParam);
+
+    try {
+      if (jobId !== null && !Number.isNaN(jobId)) {
+        const quiz = await this.striveQuizService.waitForGeneratedQuiz(jobId);
+        this.applyLoadedQuiz(quiz);
+        return;
+      }
+
+      const sourceQuiz = this.striveQuizService.consumePendingSourceQuiz();
+      if (sourceQuiz === null) {
+        this.setLoadError('No source-based quiz is ready. Add sources from the dashboard first.');
+        return;
+      }
+
+      this.applyLoadedQuiz(sourceQuiz);
+    } catch {
+      this.setLoadError('Unable to load source-based questions from the Strive quiz API.');
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  private async loadGeneratedQuiz(generation: {
+    job?: { id: number };
+    id?: number;
+  }): Promise<QuizQuestionsResponse> {
+    const jobId = generation.job?.id ?? generation.id;
+    if (jobId === undefined) {
+      throw new Error('Quiz generation response did not include a job id.');
     }
 
-    this.applyLoadedQuiz(sourceQuiz);
-    this.loading.set(false);
+    return generation.job === undefined
+      ? this.striveQuizService.getQuiz(jobId)
+      : this.striveQuizService.waitForGeneratedQuiz(jobId);
   }
 
   private applyLoadedQuiz(quiz: QuizQuestionsResponse): void {

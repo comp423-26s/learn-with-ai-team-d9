@@ -8,7 +8,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
   QuizCreateRequest,
-  QuizCreateResponse,
+  QuizGenerationJobResponse,
   QuizQuestionsResponse,
   QuizSubmitRequest,
   QuizSubmitResponse,
@@ -29,9 +29,9 @@ export class StriveQuizService {
   private pendingSourceQuiz: QuizQuestionsResponse | null = null;
 
   /** Starts a new quiz submission for the given activity. */
-  startQuiz(activityId: number, body: QuizCreateRequest): Promise<QuizCreateResponse> {
+  startQuiz(activityId: number, body: QuizCreateRequest): Promise<QuizGenerationJobResponse> {
     return firstValueFrom(
-      this.http.post<QuizCreateResponse>(`/api/activities/${activityId}/quizzes`, body),
+      this.http.post<QuizGenerationJobResponse>(`/api/activities/${activityId}/quizzes`, body),
     );
   }
 
@@ -52,13 +52,13 @@ export class StriveQuizService {
     activityId: number,
     file: File,
     questionCount: number,
-  ): Promise<QuizQuestionsResponse> {
+  ): Promise<QuizGenerationJobResponse> {
     const formData = new FormData();
     formData.append('file', file, file.name);
     formData.append('question_count', String(questionCount));
 
     return firstValueFrom(
-      this.http.post<QuizQuestionsResponse>(
+      this.http.post<QuizGenerationJobResponse>(
         `/api/activities/${activityId}/quizzes/upload-pdf`,
         formData,
       ),
@@ -71,12 +71,26 @@ export class StriveQuizService {
   }
 
   /** Generates a quiz from a previously saved source. */
-  createSourceQuiz(sourceId: number, questionCount: number): Promise<QuizQuestionsResponse> {
+  createSourceQuiz(sourceId: number, questionCount: number): Promise<QuizGenerationJobResponse> {
     return firstValueFrom(
-      this.http.post<QuizQuestionsResponse>(`/api/sources/${sourceId}/quizzes`, {
+      this.http.post<QuizGenerationJobResponse>(`/api/sources/${sourceId}/quizzes`, {
         question_count: questionCount,
       }),
     );
+  }
+
+  /** Waits for a queued quiz-generation job and returns the generated quiz. */
+  async waitForGeneratedQuiz(jobId: number): Promise<QuizQuestionsResponse> {
+    const maxAttempts = 90;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        return await this.getQuiz(jobId);
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+    }
+
+    throw new Error('Timed out waiting for generated quiz.');
   }
 
   /** Stores a generated source-based quiz so the quiz page can consume it. */

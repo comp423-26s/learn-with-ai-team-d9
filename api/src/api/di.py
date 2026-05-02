@@ -354,10 +354,13 @@ StriveSourceRepositoryDI: TypeAlias = Annotated[StriveSourceRepository, Depends(
 
 
 def strive_service_factory(
-    strive_repo: StriveRepositoryDI, strive_source_repo: StriveSourceRepositoryDI
+    strive_repo: StriveRepositoryDI,
+    strive_source_repo: StriveSourceRepositoryDI,
+    async_job_repo: AsyncJobRepositoryDI,
+    job_queue: JobQueueDI,
 ) -> StriveService:
     """Creates the Strive service for the current request."""
-    return StriveService(strive_repo, strive_source_repo)
+    return StriveService(strive_repo, strive_source_repo, async_job_repo, job_queue)
 
 
 StriveServiceDI: TypeAlias = Annotated[StriveService, Depends(strive_service_factory)]

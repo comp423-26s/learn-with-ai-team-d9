@@ -7,9 +7,13 @@ from io import BytesIO
 from itertools import count
 from typing import Any, List
 
+from learnwithai.activities.strive.models import STRIVE_QUIZ_GENERATION_KIND, StriveQuizGenerationJob
 from learnwithai.config import Settings, get_settings
+from learnwithai.interfaces import JobQueue
+from learnwithai.repositories.async_job_repository import AsyncJobRepository
 from learnwithai.repositories.strive_source_repository import StriveSourceRepository
 from learnwithai.tables.activity import Activity
+from learnwithai.tables.async_job import AsyncJob, AsyncJobStatus
 from learnwithai.tables.strive import StriveSource
 from learnwithai.tables.user import User
 from openai import OpenAI
@@ -103,16 +107,19 @@ class StriveService:
         self,
         quiz_repo: object | None = None,
         source_repo: StriveSourceRepository | None = None,
+        async_job_repo: AsyncJobRepository | None = None,
+        job_queue: JobQueue | None = None,
         settings: Settings | None = None,
         **_kwargs: object,
     ) -> None:
         self.quiz_repo = quiz_repo
         self.source_repo = source_repo
+        self.async_job_repo = async_job_repo
+        self.job_queue = job_queue
         self.settings = settings or get_settings()
         self.client = OpenAI(
             api_key=self.settings.openai_api_key,
             base_url=f"{self.settings.openai_endpoint.rstrip('/')}/openai/v1/",
-            timeout=20.0,
         )
 
     def _build_llm_prompt(self, qcount: int) -> str:
@@ -195,6 +202,155 @@ class StriveService:
             }
             for source in sources
         ]
+
+    def start_quiz_job(self, subject: User, activity: Activity, options: object | None = None) -> AsyncJob:
+        """Creates and enqueues an async job for standard Strive quiz generation."""
+        qcount = getattr(options, "question_count", 5) if options is not None else 5
+        mode = getattr(options, "mode", "daily") if options is not None else "daily"
+        module_name = getattr(options, "module_name", None) if options is not None else None
+        topic = getattr(options, "topic", None) if options is not None else None
+
+        return self._create_quiz_generation_job(
+            subject=subject,
+            activity=activity,
+            question_count=qcount,
+            mode=mode,
+            module_name=module_name,
+            topic=topic,
+        )
+
+    def generate_quiz_from_pdf_job(
+        self,
+        subject: User,
+        activity: Activity,
+        pdf_bytes: bytes,
+        question_count: int = 5,
+        *,
+        source_filename: str | None = None,
+        source_content_type: str = "application/pdf",
+    ) -> AsyncJob:
+        """Stores an uploaded PDF and enqueues async quiz generation from it."""
+        source = self._store_uploaded_source(
+            subject,
+            activity,
+            pdf_bytes,
+            source_filename=source_filename,
+            source_content_type=source_content_type,
+        )
+
+        return self._create_quiz_generation_job(
+            subject=subject,
+            activity=activity,
+            question_count=question_count,
+            mode="module",
+            module_name=None,
+            topic=None,
+            source_id=source.id,
+        )
+
+    def generate_quiz_from_source_job(self, subject: User, source_id: int, question_count: int = 5) -> AsyncJob:
+        """Enqueues async quiz generation from a previously stored source."""
+        if self.source_repo is None:
+            raise RuntimeError("StriveSourceRepository not configured.")
+
+        source = self.source_repo.get_by_id(source_id)
+        if source is None:
+            raise KeyError("source not found")
+
+        if source.student_pid != subject.pid:
+            raise PermissionError("not allowed")
+
+        activity_ref = type("ActivityRef", (), {"id": source.activity_id, "course_id": source.activity_id})()
+        return self._create_quiz_generation_job(
+            subject=subject,
+            activity=activity_ref,  # type: ignore[arg-type]
+            question_count=question_count,
+            mode="module",
+            module_name=None,
+            topic=None,
+            source_id=source.id,
+        )
+
+    def get_async_quiz(self, subject: User, job_id: int) -> dict[str, Any]:
+        """Returns the generated quiz payload for a completed async Strive job."""
+        async_job = self._get_owned_quiz_job(subject, job_id)
+        if async_job.status != AsyncJobStatus.COMPLETED:
+            raise ValueError(f"Quiz generation job is {async_job.status.value}.")
+
+        quiz = (async_job.output_data or {}).get("quiz")
+        if not isinstance(quiz, dict):
+            raise ValueError("Quiz generation job has no quiz output yet.")
+
+        return self._public_quiz_payload(quiz)
+
+    def submit_async_quiz(self, subject: User, job_id: int, answers: Any) -> dict[str, Any]:
+        """Grades answers for a quiz generated by an async Strive job."""
+        async_job = self._get_owned_quiz_job(subject, job_id)
+        quiz = (async_job.output_data or {}).get("quiz")
+        if not isinstance(quiz, dict):
+            raise ValueError("Quiz generation job has no quiz output yet.")
+
+        result = grade_answers(quiz["questions"], answers, mode=str(quiz.get("mode") or "daily"))
+        finished_at = datetime.now(timezone.utc)
+        return {"id": job_id, **result, "finished_at": finished_at}
+
+    def _create_quiz_generation_job(
+        self,
+        subject: User,
+        activity: Activity,
+        *,
+        question_count: int,
+        mode: str,
+        module_name: str | None,
+        topic: str | None,
+        source_id: int | None = None,
+    ) -> AsyncJob:
+        """Persists an async job and queues it for Strive question generation."""
+        if self.async_job_repo is None or self.job_queue is None:
+            raise RuntimeError("Async job dependencies are not configured.")
+
+        assert activity.id is not None, "Activity must be persisted before starting a quiz"
+        course_id = getattr(activity, "course_id", None) or activity.id
+        async_job = self.async_job_repo.create(
+            AsyncJob(
+                course_id=course_id,
+                created_by_pid=subject.pid,
+                kind=STRIVE_QUIZ_GENERATION_KIND,
+                status=AsyncJobStatus.PENDING,
+                input_data={
+                    "activity_id": activity.id,
+                    "student_pid": subject.pid,
+                    "question_count": question_count,
+                    "mode": mode,
+                    "module_name": module_name,
+                    "topic": topic,
+                    "source_id": source_id,
+                },
+            )
+        )
+        assert async_job.id is not None
+
+        self.job_queue.enqueue(StriveQuizGenerationJob(job_id=async_job.id))
+        return async_job
+
+    def _get_owned_quiz_job(self, subject: User, job_id: int) -> AsyncJob:
+        """Loads a Strive quiz job and checks ownership."""
+        if self.async_job_repo is None:
+            raise KeyError("quiz job not found")
+
+        async_job = self.async_job_repo.get_by_id(job_id)
+        if async_job is None or async_job.kind != STRIVE_QUIZ_GENERATION_KIND:
+            raise KeyError("quiz job not found")
+        if async_job.created_by_pid != subject.pid:
+            raise PermissionError("not allowed")
+        return async_job
+
+    def _public_quiz_payload(self, quiz: dict[str, Any]) -> dict[str, Any]:
+        """Strips correct answers from a stored quiz payload."""
+        public_questions = [
+            {"question_id": q["question_id"], "text": q["text"], "choices": q["choices"]} for q in quiz["questions"]
+        ]
+        return {**quiz, "questions": public_questions}
 
     def _store_uploaded_source(
         self,
@@ -584,7 +740,7 @@ class StriveService:
     def get_quiz(self, subject: User, submission_id: int) -> dict[str, Any]:
         data = _QUIZ_STORE.get(int(submission_id))
         if data is None:
-            raise KeyError("quiz not found")
+            return self.get_async_quiz(subject, submission_id)
 
         if data["submission"]["student_pid"] != subject.pid:
             raise PermissionError("not allowed")
@@ -605,7 +761,7 @@ class StriveService:
     def submit_quiz(self, subject: User, submission_id: int, answers: Any) -> dict[str, Any]:
         data = _QUIZ_STORE.get(int(submission_id))
         if data is None:
-            raise KeyError("quiz not found")
+            return self.submit_async_quiz(subject, submission_id, answers)
 
         if data["submission"]["student_pid"] != subject.pid:
             raise PermissionError("not allowed")

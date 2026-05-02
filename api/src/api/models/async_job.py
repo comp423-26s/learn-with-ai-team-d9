@@ -6,7 +6,7 @@
 from datetime import datetime
 
 from learnwithai.tables.async_job import AsyncJobStatus
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class AsyncJobInfo(BaseModel):
@@ -16,6 +16,8 @@ class AsyncJobInfo(BaseModel):
     that job lifecycle fields (status, timing) are grouped together
     rather than flattened alongside domain data.
     """
+
+    model_config = ConfigDict(from_attributes=True)
 
     id: int
     status: AsyncJobStatus

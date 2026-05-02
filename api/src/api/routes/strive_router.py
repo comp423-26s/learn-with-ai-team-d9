@@ -8,7 +8,7 @@ from starlette.status import HTTP_201_CREATED
 from api.di import ActivityByPathDI, AuthenticatedUserDI, StriveServiceDI
 from api.models.strive import (
     QuizCreateRequest,
-    QuizCreateResponse,
+    QuizGenerationJobResponse,
     QuizQuestionsResponse,
     QuizSubmitRequest,
     QuizSubmitResponse,
@@ -22,22 +22,20 @@ router = APIRouter(tags=["Strive"])
 @router.post(
     "/activities/{activity_id}/quizzes",
     status_code=HTTP_201_CREATED,
-    response_model=QuizCreateResponse,
-    summary="Start a quiz for an activity",
+    response_model=QuizGenerationJobResponse,
+    summary="Queue quiz generation for an activity",
 )
 def start_quiz(
+    subject: AuthenticatedUserDI,
     activity: ActivityByPathDI,
     body: Annotated[QuizCreateRequest, Body(...)],
-    subject: AuthenticatedUserDI,
     strive_svc: StriveServiceDI,
-) -> QuizCreateResponse:
+) -> QuizGenerationJobResponse:
     if strive_svc is None:
         raise HTTPException(status_code=501, detail="StriveService not wired.")
-    # Delegate to service (service is authoritative for persistence and generation)
     try:
-        return QuizCreateResponse.model_validate(
-            strive_svc.start_quiz(subject=subject, activity=activity, options=body)
-        )
+        job = strive_svc.start_quiz_job(subject=subject, activity=activity, options=body)
+        return QuizGenerationJobResponse.model_validate({"job": job})
     except KeyError:
         raise HTTPException(status_code=404, detail="Strive activity not found")
 
@@ -48,8 +46,8 @@ def start_quiz(
     summary="Get questions for a quiz submission",
 )
 def get_quiz(
-    quiz_submission_id: Annotated[int, Path(...)],
     subject: AuthenticatedUserDI,
+    quiz_submission_id: Annotated[int, Path(...)],
     strive_svc: StriveServiceDI,
 ) -> QuizQuestionsResponse:
     if strive_svc is None:
@@ -60,6 +58,10 @@ def get_quiz(
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="Quiz submission not found")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Not allowed to access this quiz")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 @router.post(
@@ -68,9 +70,9 @@ def get_quiz(
     summary="Submit answers for grading",
 )
 def submit_quiz(
+    subject: AuthenticatedUserDI,
     quiz_submission_id: Annotated[int, Path(...)],
     body: Annotated[QuizSubmitRequest, Body(...)],
-    subject: AuthenticatedUserDI,
     strive_svc: StriveServiceDI,
 ) -> QuizSubmitResponse:
     if strive_svc is None:
@@ -83,6 +85,10 @@ def submit_quiz(
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="Quiz submission not found")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Not allowed to submit this quiz")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 @router.get(
@@ -104,18 +110,18 @@ def list_sources(
 @router.post(
     "/activities/{activity_id}/quizzes/upload-pdf",
     status_code=HTTP_201_CREATED,
-    response_model=QuizQuestionsResponse,
-    summary="Upload PDF and generate a quiz synchronously",
+    response_model=QuizGenerationJobResponse,
+    summary="Upload PDF and queue quiz generation",
 )
 def upload_pdf_and_generate_quiz(
+    subject: AuthenticatedUserDI,
     activity: ActivityByPathDI,
     file: Annotated[UploadFile, File(...)],
-    subject: AuthenticatedUserDI,
     strive_svc: StriveServiceDI,
     question_count: int = Form(5),
-) -> QuizQuestionsResponse:
+) -> QuizGenerationJobResponse:
     """
-    Accepts a PDF upload and synchronously generates a quiz from its text.
+    Accepts a PDF upload and queues quiz generation from its text.
 
     - `file`: uploaded PDF file (multipart/form-data)
     - `question_count`: optional form field (defaults to 5)
@@ -139,9 +145,7 @@ def upload_pdf_and_generate_quiz(
         raise HTTPException(status_code=413, detail="Uploaded file is too large")
 
     try:
-        # Delegate to the Strive service; service should accept PDF bytes and return
-        # a submission dict compatible with QuizQuestionsResponse
-        result = strive_svc.generate_quiz_from_pdf(
+        job = strive_svc.generate_quiz_from_pdf_job(
             subject=subject,
             activity=activity,
             pdf_bytes=content,
@@ -149,7 +153,7 @@ def upload_pdf_and_generate_quiz(
             source_filename=file.filename,
             source_content_type=file.content_type or "application/pdf",
         )
-        return QuizQuestionsResponse.model_validate(result)
+        return QuizGenerationJobResponse.model_validate({"job": job})
     except KeyError:
         raise HTTPException(status_code=404, detail="Strive activity not found")
     except ValueError as exc:
@@ -161,25 +165,25 @@ def upload_pdf_and_generate_quiz(
 @router.post(
     "/sources/{source_id}/quizzes",
     status_code=HTTP_201_CREATED,
-    response_model=QuizQuestionsResponse,
-    summary="Generate a quiz from a previously stored source",
+    response_model=QuizGenerationJobResponse,
+    summary="Queue quiz generation from a previously stored source",
 )
 def create_source_quiz(
+    subject: AuthenticatedUserDI,
     source_id: Annotated[int, Path(...)],
     body: Annotated[SourceQuizCreateRequest, Body(...)],
-    subject: AuthenticatedUserDI,
     strive_svc: StriveServiceDI,
-) -> QuizQuestionsResponse:
+) -> QuizGenerationJobResponse:
     if strive_svc is None:
         raise HTTPException(status_code=501, detail="StriveService not wired.")
 
     try:
-        result = strive_svc.generate_quiz_from_source(
+        job = strive_svc.generate_quiz_from_source_job(
             subject=subject,
             source_id=source_id,
             question_count=body.question_count,
         )
-        return QuizQuestionsResponse.model_validate(result)
+        return QuizGenerationJobResponse.model_validate({"job": job})
     except KeyError:
         raise HTTPException(status_code=404, detail="Source not found")
     except PermissionError:

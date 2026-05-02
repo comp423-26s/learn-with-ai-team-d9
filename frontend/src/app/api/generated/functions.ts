@@ -45,6 +45,18 @@ export type { GetActiveSubmission$Params as GetActiveSubmission$Params } from '.
 export { getActiveSubmission as getActiveSubmission } from './fn/activities/get-active-submission';
 export type { GetStudentSubmissionHistory$Params as GetStudentSubmissionHistory$Params } from './fn/activities/get-student-submission-history';
 export { getStudentSubmissionHistory as getStudentSubmissionHistory } from './fn/activities/get-student-submission-history';
+export type { StartQuiz$Params as StartQuiz$Params } from './fn/strive/start-quiz';
+export { startQuiz as startQuiz } from './fn/strive/start-quiz';
+export type { GetQuiz$Params as GetQuiz$Params } from './fn/strive/get-quiz';
+export { getQuiz as getQuiz } from './fn/strive/get-quiz';
+export type { SubmitQuiz$Params as SubmitQuiz$Params } from './fn/strive/submit-quiz';
+export { submitQuiz as submitQuiz } from './fn/strive/submit-quiz';
+export type { ListSources$Params as ListSources$Params } from './fn/strive/list-sources';
+export { listSources as listSources } from './fn/strive/list-sources';
+export type { UploadPdfAndGenerateQuiz$Params as UploadPdfAndGenerateQuiz$Params } from './fn/strive/upload-pdf-and-generate-quiz';
+export { uploadPdfAndGenerateQuiz as uploadPdfAndGenerateQuiz } from './fn/strive/upload-pdf-and-generate-quiz';
+export type { CreateSourceQuiz$Params as CreateSourceQuiz$Params } from './fn/strive/create-source-quiz';
+export { createSourceQuiz as createSourceQuiz } from './fn/strive/create-source-quiz';
 export type { UploadRosterCsv$Params as UploadRosterCsv$Params } from './fn/roster-uploads/upload-roster-csv';
 export { uploadRosterCsv as uploadRosterCsv } from './fn/roster-uploads/upload-roster-csv';
 export type { GetRosterUploadStatus$Params as GetRosterUploadStatus$Params } from './fn/roster-uploads/get-roster-upload-status';
@@ -57,6 +69,8 @@ export type { GetJokeRequest$Params as GetJokeRequest$Params } from './fn/instru
 export { getJokeRequest as getJokeRequest } from './fn/instructor-tools/get-joke-request';
 export type { DeleteJokeRequest$Params as DeleteJokeRequest$Params } from './fn/instructor-tools/delete-joke-request';
 export { deleteJokeRequest as deleteJokeRequest } from './fn/instructor-tools/delete-joke-request';
+export type { TeamTest$Params as TeamTest$Params } from './fn/team/team-test';
+export { teamTest as teamTest } from './fn/team/team-test';
 export type { DevListUsers$Params as DevListUsers$Params } from './fn/development/dev-list-users';
 export { devListUsers as devListUsers } from './fn/development/dev-list-users';
 export type { DevLoginAs$Params as DevLoginAs$Params } from './fn/development/dev-login-as';
