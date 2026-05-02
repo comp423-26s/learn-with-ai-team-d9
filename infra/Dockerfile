@@ -7,7 +7,9 @@ FROM node:24-slim AS frontend-build
 # any other value uses the default production bundle.
 ARG ENVIRONMENT=production
 
-RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
+# Install pnpm directly so the build does not depend on a separate Corepack
+# package-manager download during every OKD build.
+RUN npm install -g pnpm@10.32.1 --no-fund --no-audit
 
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
